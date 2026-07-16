@@ -49,6 +49,7 @@ final class AnswerModel: ObservableObject {
 struct OverlayBarView: View {
     @ObservedObject var model: AnswerModel
     @State private var input: String = ""
+    @State private var hoverTip: String = ""   // custom tooltip (reliable on overlay panel)
 
     var onSubmit: (String) -> Void
     var onToggleListen: () -> Void
@@ -168,24 +169,44 @@ struct OverlayBarView: View {
 
     private var toolbarRow: some View {
         HStack(spacing: 18) {
-            iconButton("waveform", active: model.listening, activeColor: .blue,
-                       help: "Listen to the meeting audio", action: onToggleListen)
-            iconButton("eye", active: false, activeColor: .primary,
-                       help: "Read the question on your screen", action: onReadScreen)
-            iconButton(model.invisible ? "eye.slash.fill" : "shield",
+            // Listen — waveform, blue + filled when active.
+            iconButton(model.listening ? "waveform.circle.fill" : "waveform",
+                       active: model.listening, activeColor: .blue,
+                       tip: model.listening ? "Stop listening" : "Listen to meeting audio",
+                       action: onToggleListen)
+
+            // Read Screen — a text-viewfinder (distinct from the invisibility eye).
+            iconButton("text.viewfinder", active: false, activeColor: .primary,
+                       tip: "Read the question on your screen", action: onReadScreen)
+
+            // Invisibility — open eye (visible) vs crossed eye + green (invisible).
+            iconButton(model.invisible ? "eye.slash.fill" : "eye",
                        active: model.invisible, activeColor: .green,
-                       help: model.invisible ? "Invisible to screen-share" : "Visible — click to hide",
+                       tip: model.invisible ? "Invisible to screen-share — click to show"
+                                            : "Visible — click to hide from screen-share",
                        action: onToggleInvisible)
 
             Divider().frame(height: 16)
 
-            iconButton("clock.arrow.circlepath", active: model.showHistory, activeColor: .primary,
-                       help: "History", action: { model.showHistory.toggle() })
+            // History.
+            iconButton("clock.arrow.circlepath", active: model.showHistory, activeColor: .accentColor,
+                       tip: "History", action: { model.showHistory.toggle() })
+
+            // Collapse / expand the conversation box.
             iconButton(model.collapsed ? "chevron.up" : "chevron.down", active: false, activeColor: .primary,
-                       help: model.collapsed ? "Expand" : "Collapse",
+                       tip: model.collapsed ? "Expand conversation" : "Collapse conversation",
                        action: { model.collapsed.toggle() })
 
             Spacer()
+
+            // Tooltip text (shows on hover — reliable on our overlay panel).
+            if !hoverTip.isEmpty {
+                Text(hoverTip)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .transition(.opacity)
+            }
 
             // Model picker.
             Menu {
@@ -201,19 +222,25 @@ struct OverlayBarView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Choose which local model answers")
         }
     }
 
     private func iconButton(_ symbol: String, active: Bool, activeColor: Color,
-                            help: String, action: @escaping () -> Void) -> some View {
+                            tip: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 15))
                 .foregroundStyle(active ? activeColor : .secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .help(tip)   // native tooltip (fallback)
+        .onHover { inside in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                hoverTip = inside ? tip : ""
+            }
+        }
     }
 
     private func submit() {
