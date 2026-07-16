@@ -1,9 +1,11 @@
 .build/
 .DS_Store
-*.xcodeproj
+**/.DS_Store
 .superpowers/
 docs/
 OpenCluelyCore/.build/
-cluelyopen/.DS_Store
-**/.DS_Store
+
+# Xcode — track the .xcodeproj, but ignore per-user cruft inside it
 xcuserdata/
+**/xcuserdata/
+DerivedData/
