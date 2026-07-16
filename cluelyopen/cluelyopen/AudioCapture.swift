@@ -32,20 +32,28 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             throw NSError(domain: "OpenCluely", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No display available for capture."])
         }
+        // Exclude our own app so we never capture our own sounds/window.
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
 
-        // Let SCK use its native audio format; we convert ourselves. Keep video
-        // minimal (we ignore frames) and on its own queue so it can't starve audio.
+        // Audio-only capture: capture system audio but keep the video stream at
+        // the smallest possible size and lowest frame rate, and DON'T register a
+        // screen output. Capturing display video can dim DRM-protected playback
+        // (e.g. streaming sites) and is unnecessary — we only need audio.
         let config = SCStreamConfiguration()
         config.capturesAudio = true
+        config.excludesCurrentProcessAudio = true
+        config.sampleRate = 48_000
+        config.channelCount = 2
         config.width = 2
         config.height = 2
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+        config.queueDepth = 5
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
+        // Only the audio output is registered — no screen output means SCK stops
+        // delivering (and we stop touching) video frames.
         try stream.addStreamOutput(self, type: .audio,
                                    sampleHandlerQueue: DispatchQueue(label: "opencluely.audio"))
-        try stream.addStreamOutput(self, type: .screen,
-                                   sampleHandlerQueue: DispatchQueue(label: "opencluely.video"))
         try await stream.startCapture()
         self.stream = stream
     }

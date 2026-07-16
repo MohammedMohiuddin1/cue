@@ -21,21 +21,21 @@ final class WhisperTranscriber: Transcriber {
     private var worker: Task<Void, Never>?
     private let onText: (String) -> Void
 
-    private let windowSamples = 16_000 * 5   // 5s windows
+    private let windowSamples = 16_000 * 4   // 4s windows (snappier with small.en)
 
     /// - Parameters:
     ///   - modelURL: ggml model path (e.g. ggml-small.en.bin)
     ///   - onText: called on the main actor with each newly transcribed phrase.
     init(modelURL: URL, onText: @escaping (String) -> Void) {
-        // Beam search (vs greedy) reduces repetition/errors per the Whisper docs.
-        let params = WhisperParams(strategy: .beamSearch)
+        // Greedy decoding: much faster than beam search for near-real-time use.
+        let params = WhisperParams(strategy: .greedy)
         params.language = .english
         params.translate = false
         params.no_context = true
         params.suppress_blank = true
         self.whisper = Whisper(fromFileURL: modelURL, withParams: params)
         self.onText = onText
-        self.store = AudioAccumulator(windowSamples: 16_000 * 5)
+        self.store = AudioAccumulator(windowSamples: windowSamples)
         startWorker()
     }
 
