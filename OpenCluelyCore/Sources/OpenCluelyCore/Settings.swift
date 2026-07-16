@@ -42,7 +42,9 @@ public final class Settings {
         set { store.setString(newValue, forKey: "visionModel") }
     }
     public var whisperModel: String {
-        get { store.string(forKey: "whisperModel") ?? "base.en" }
+        // small.en is more accurate than base.en (larger, ~466MB) — the app
+        // bundles ggml-<whisperModel>.bin. Users can change this in Settings.
+        get { store.string(forKey: "whisperModel") ?? "small.en" }
         set { store.setString(newValue, forKey: "whisperModel") }
     }
     public var overlayOrigin: CGPoint {
