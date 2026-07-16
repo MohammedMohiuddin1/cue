@@ -42,10 +42,10 @@ public final class Settings {
         set { store.setString(newValue, forKey: "visionModel") }
     }
     public var whisperModel: String {
-        // small.en — best real-time balance: ~3x faster than medium.en, solid
-        // accuracy, and Core ML accelerated. The app bundles ggml-<name>.bin
-        // (+ the .mlmodelc encoder). Changeable in Settings.
-        get { store.string(forKey: "whisperModel") ?? "small.en" }
+        // base.en — fastest practical model, used with a streaming window for
+        // near-real-time transcription. Core ML accelerated. The app bundles
+        // ggml-<name>.bin (+ the .mlmodelc encoder). Changeable in Settings.
+        get { store.string(forKey: "whisperModel") ?? "base.en" }
         set { store.setString(newValue, forKey: "whisperModel") }
     }
     public var overlayOrigin: CGPoint {

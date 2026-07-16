@@ -2,13 +2,14 @@
 //  WhisperTranscriber.swift
 //  cluelyopen
 //
-//  Fully-local speech-to-text using bundled whisper.cpp (via SwiftWhisper).
+//  Streaming local speech-to-text using bundled whisper.cpp (via SwiftWhisper),
+//  Core ML accelerated.
 //
-//  Architecture: audio chunks are appended to a thread-safe buffer as they
-//  arrive. A single dedicated worker loop pulls fixed windows and transcribes
-//  them back-to-back, so no audio is dropped while whisper is busy. Results are
-//  delivered via a callback (not the return value), decoupling capture rate from
-//  transcription speed.
+//  Streaming design: audio is appended continuously. A worker transcribes the
+//  most recent ~7s of audio every time ~1.5s of new audio has arrived, then
+//  emits only the words that are NEW compared to the previous run (prefix
+//  diffing). This makes text appear ~1.5s after speech instead of waiting for a
+//  full fixed window, while a rolling context keeps phrases coherent.
 //
 
 import Foundation
@@ -17,17 +18,15 @@ internal import whisper_cpp
 
 final class WhisperTranscriber: Transcriber {
     private let whisper: Whisper
-    private let store: AudioAccumulator
+    private let store = StreamStore(
+        contextSamples: 16_000 * 7,   // transcribe up to the last 7s
+        triggerSamples: 16_000 * 3 / 2 // run when ~1.5s of new audio arrived
+    )
     private var worker: Task<Void, Never>?
     private let onText: (String) -> Void
+    private var lastEmitted = ""      // last full transcript of the rolling window
 
-    private let windowSamples = 16_000 * 4   // 4s windows (snappier with small.en)
-
-    /// - Parameters:
-    ///   - modelURL: ggml model path (e.g. ggml-small.en.bin)
-    ///   - onText: called on the main actor with each newly transcribed phrase.
     init(modelURL: URL, onText: @escaping (String) -> Void) {
-        // Greedy decoding: much faster than beam search for near-real-time use.
         let params = WhisperParams(strategy: .greedy)
         params.language = .english
         params.translate = false
@@ -35,72 +34,94 @@ final class WhisperTranscriber: Transcriber {
         params.suppress_blank = true
         self.whisper = Whisper(fromFileURL: modelURL, withParams: params)
         self.onText = onText
-        self.store = AudioAccumulator(windowSamples: windowSamples)
         startWorker()
     }
 
     deinit { worker?.cancel() }
 
-    /// Called per audio chunk from capture. Just buffers; never blocks capture.
+    /// Called per audio chunk from capture; just buffers.
     func transcribe(_ pcm: [Float]) async -> String {
         await store.append(pcm)
-        return ""   // results arrive via onText, not here
+        return ""
     }
 
-    /// Dedicated loop: pull a window (waiting if not enough audio yet), run
-    /// whisper, deliver text, repeat. Processes every window in order.
     private func startWorker() {
         worker = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                let window = await self.store.nextWindow()   // suspends until ready
+                let (window, isReset) = await self.store.nextWindow()
+                if isReset { self.lastEmitted = "" }
                 do {
                     let segments = try await self.whisper.transcribe(audioFrames: window)
-                    let text = segments.map(\.text).joined()
+                    let full = segments.map(\.text).joined()
                         .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty {
-                        NSLog("OpenCluely whisper: \"%@\"", text)
-                        await MainActor.run { self.onText(text) }
+                    let newText = Self.newSuffix(previous: self.lastEmitted, current: full)
+                    self.lastEmitted = full
+                    if !newText.isEmpty {
+                        NSLog("OpenCluely whisper +\"%@\"", newText)
+                        await MainActor.run { self.onText(newText) }
                     }
                 } catch {
-                    NSLog("OpenCluely whisper: error %@", String(describing: error))
+                    NSLog("OpenCluely whisper error %@", String(describing: error))
                 }
             }
         }
     }
+
+    /// Return the part of `current` that extends `previous` (word-level), so we
+    /// only emit newly-transcribed words rather than re-emitting the whole window.
+    private static func newSuffix(previous: String, current: String) -> String {
+        guard !previous.isEmpty else { return current }
+        let prevWords = previous.split(separator: " ")
+        let curWords = current.split(separator: " ")
+        // Find how many leading words still match; emit the rest.
+        var i = 0
+        while i < prevWords.count && i < curWords.count && prevWords[i] == curWords[i] { i += 1 }
+        let tail = curWords[min(i, curWords.count)...]
+        return tail.joined(separator: " ")
+    }
 }
 
-/// Thread-safe accumulator that hands out fixed-size windows in order, waiting
-/// (via a continuation) when not enough audio has arrived yet. No audio is lost.
-private actor AudioAccumulator {
+/// Continuous store: keeps a rolling context window and signals the worker when
+/// enough new audio has arrived. When the buffer would grow past the context
+/// length, it slides forward and flags a reset so the diff baseline is cleared.
+private actor StreamStore {
     private var buffer: [Float] = []
-    private let windowSamples: Int
-    private var waiter: CheckedContinuation<[Float], Never>?
+    private var newSinceLastWindow = 0
+    private let contextSamples: Int
+    private let triggerSamples: Int
+    private var waiter: CheckedContinuation<([Float], Bool), Never>?
 
-    init(windowSamples: Int) { self.windowSamples = windowSamples }
+    init(contextSamples: Int, triggerSamples: Int) {
+        self.contextSamples = contextSamples
+        self.triggerSamples = triggerSamples
+    }
 
     func append(_ pcm: [Float]) {
         buffer.append(contentsOf: pcm)
-        // If a worker is waiting and we now have a full window, resume it.
-        if let waiter, buffer.count >= windowSamples {
+        newSinceLastWindow += pcm.count
+        if let waiter, newSinceLastWindow >= triggerSamples {
             self.waiter = nil
             waiter.resume(returning: takeWindow())
         }
     }
 
-    /// Returns the next full window, suspending until enough audio exists.
-    func nextWindow() async -> [Float] {
-        if buffer.count >= windowSamples {
+    func nextWindow() async -> ([Float], Bool) {
+        if newSinceLastWindow >= triggerSamples {
             return takeWindow()
         }
-        return await withCheckedContinuation { cont in
-            self.waiter = cont
-        }
+        return await withCheckedContinuation { cont in self.waiter = cont }
     }
 
-    private func takeWindow() -> [Float] {
-        let window = Array(buffer.prefix(windowSamples))
-        buffer.removeFirst(min(windowSamples, buffer.count))
-        return window
+    /// Returns (window, didReset). Slides the buffer when it exceeds the context
+    /// length; a slide resets the diff baseline in the worker.
+    private func takeWindow() -> ([Float], Bool) {
+        newSinceLastWindow = 0
+        var didReset = false
+        if buffer.count > contextSamples {
+            buffer.removeFirst(buffer.count - contextSamples)
+            didReset = true
+        }
+        return (buffer, didReset)
     }
 }
