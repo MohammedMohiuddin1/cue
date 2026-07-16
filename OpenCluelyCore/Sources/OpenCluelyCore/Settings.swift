@@ -67,8 +67,10 @@ public final class Settings {
     // change the model in Settings.
     private static func defaultText(for tier: RAMTier) -> String {
         switch tier {
-        case .high: return "qwen3-coder"
-        case .mid, .low: return "deepseek-coder-v2"
+        // qwen2.5-coder:7b is the best coding model that fits comfortably on a
+        // 16GB Mac (~4.4GB, leaves OS headroom). qwen3-coder (~19GB) needs 32GB+.
+        case .high: return "qwen2.5-coder:7b"
+        case .mid, .low: return "qwen2.5-coder:7b"
         }
     }
     private static func defaultVision(for tier: RAMTier) -> String {

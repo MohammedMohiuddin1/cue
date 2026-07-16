@@ -12,20 +12,20 @@ final class InMemoryStore: KeyValueStore {
 
 @Test func defaultsForHighRAM() {
     let s = Settings(store: InMemoryStore(), tier: .high)
-    #expect(s.textModel == "qwen3-coder")
+    #expect(s.textModel == "qwen2.5-coder:7b")
     #expect(s.visionModel == "qwen2.5vl:7b")
     #expect(s.whisperModel == "base.en")
 }
 
 @Test func defaultsForMidRAM() {
     let s = Settings(store: InMemoryStore(), tier: .mid)
-    #expect(s.textModel == "deepseek-coder-v2")
+    #expect(s.textModel == "qwen2.5-coder:7b")
     #expect(s.visionModel == "qwen2.5vl:7b")
 }
 
 @Test func defaultsForLowRAM() {
     let s = Settings(store: InMemoryStore(), tier: .low)
-    #expect(s.textModel == "deepseek-coder-v2")
+    #expect(s.textModel == "qwen2.5-coder:7b")
     #expect(s.visionModel == "moondream")
 }
 

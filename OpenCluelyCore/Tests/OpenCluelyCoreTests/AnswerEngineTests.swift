@@ -34,14 +34,14 @@ private func makeEngine(_ fake: FakeLLM) -> AnswerEngine {
     var out = ""
     for try await t in makeEngine(fake).answer(userText: "q", context: .none) { out += t }
     #expect(out == "ok")
-    #expect(fake.lastModel == "qwen3-coder")
+    #expect(fake.lastModel == "qwen2.5-coder:7b")
     #expect(fake.lastImages.isEmpty)
 }
 
 @Test func textContextUsesTextModelAndIncludesContext() async throws {
     let fake = FakeLLM()
     for try await _ in makeEngine(fake).answer(userText: "help", context: .text("Two Sum")) {}
-    #expect(fake.lastModel == "qwen3-coder")
+    #expect(fake.lastModel == "qwen2.5-coder:7b")
     #expect(fake.lastUser.contains("Two Sum"))
     #expect(fake.lastImages.isEmpty)
 }
