@@ -1,4 +1,4 @@
-public struct Mode: Equatable, Identifiable {
+public struct Mode: Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let systemPrompt: String
