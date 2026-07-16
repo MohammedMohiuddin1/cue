@@ -21,6 +21,7 @@ final class AnswerModel: ObservableObject {
     @Published var query: String = ""
     @Published var answer: String = ""
     @Published var status: String = ""
+    @Published var liveTranscript: String = ""  // growing transcript while listening
     @Published var contextLabel: String = ""   // e.g. "Viewed screen", "From meeting audio"
     @Published var listening: Bool = false
     @Published var invisible: Bool = false      // hidden from screen-share when true
@@ -34,7 +35,7 @@ final class AnswerModel: ObservableObject {
 
     /// True when there's something to show in the conversation box.
     var hasConversation: Bool {
-        !query.isEmpty || !answer.isEmpty || !status.isEmpty
+        !query.isEmpty || !answer.isEmpty || !status.isEmpty || !liveTranscript.isEmpty
     }
 
     /// Placeholder text that reflects the current state (like Cluely).
@@ -83,6 +84,19 @@ struct OverlayBarView: View {
     private var conversationBox: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                // Live transcript while listening (grows as you speak).
+                if model.listening && !model.liveTranscript.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform").font(.caption).foregroundStyle(.blue)
+                        Text("Live transcript").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(model.liveTranscript)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !model.answer.isEmpty || !model.query.isEmpty { Divider() }
+                }
                 if !model.query.isEmpty {
                     Text(model.query)
                         .font(.callout)

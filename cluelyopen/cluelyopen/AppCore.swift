@@ -44,8 +44,12 @@ final class AppCore: NSObject, NSApplicationDelegate {
         if let url = Bundle.main.url(forResource: "ggml-\(name)", withExtension: "bin") {
             transcriber = WhisperTranscriber(modelURL: url) { [weak self] phrase in
                 guard let self else { return }
-                self.transcript.append(phrase + " ")
-                self.model.status = "Heard: …\(String(self.transcript.recent.suffix(80)))"
+                let clean = Self.cleanSpeech(phrase)
+                guard !clean.isEmpty else { return }
+                self.transcript.append(clean + " ")
+                // Show the full growing transcript in the conversation box.
+                self.model.liveTranscript = self.transcript.recent
+                self.model.status = ""
             }
         } else {
             model_missing_warning()
@@ -56,6 +60,18 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
     private func model_missing_warning() {
         model.status = "Whisper model ggml-\(settings.whisperModel).bin not found in app bundle."
+    }
+
+    /// Strip whisper's non-speech annotations like [MUSIC], (grunting),
+    /// [BLANK_AUDIO], *screams* — keep only actual spoken words.
+    private static func cleanSpeech(_ text: String) -> String {
+        var s = text
+        for pattern in ["\\[[^\\]]*\\]", "\\([^\\)]*\\)", "\\*[^\\*]*\\*"] {
+            s = s.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        // Collapse whitespace and drop stray leading punctuation from removed tags.
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: CharacterSet(charactersIn: " -–—>."))
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -158,6 +174,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
         // transcribed phrases arrive via the onText callback set in makeTranscriber().
         let transcriber = makeTranscriber()
         transcript.clear()
+        model.liveTranscript = ""
+        model.collapsed = false
+        model.showHistory = false
         Task { @MainActor in
             do {
                 try await audio.start { pcm in
