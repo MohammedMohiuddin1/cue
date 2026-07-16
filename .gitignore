@@ -3,3 +3,7 @@
 *.xcodeproj
 .superpowers/
 docs/
+OpenCluelyCore/.build/
+cluelyopen/.DS_Store
+**/.DS_Store
+xcuserdata/
