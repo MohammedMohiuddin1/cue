@@ -82,8 +82,11 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onSelectModel: { [weak self] name in self?.selectModel(name) }
         )
         let host = NSHostingView(rootView: view)
-        host.frame = NSRect(x: 0, y: 0, width: 560, height: 120)
+        // Let the hosting view drive the window size so the answer area can grow.
+        host.sizingOptions = [.preferredContentSize]
+        host.translatesAutoresizingMaskIntoConstraints = true
         let panel = OverlayBarWindow(content: host)
+        panel.setContentSize(NSSize(width: 588, height: 120))
         panel.setFrameOrigin(settings.overlayOrigin)
         panel.orderFrontRegardless()
         overlay = panel

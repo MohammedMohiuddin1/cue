@@ -52,8 +52,9 @@ struct OverlayBarView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 2)
                 }
-                .frame(maxHeight: 260)
+                .frame(height: model.answer.isEmpty && model.query.isEmpty ? 24 : 240)
             }
 
             HStack(spacing: 8) {
