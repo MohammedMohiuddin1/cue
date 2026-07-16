@@ -34,11 +34,16 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
     /// Build the whisper transcriber from the bundled model, or fall back to the
     /// stub if the model resource is missing (keeps the app usable either way).
+    /// Transcribed phrases arrive via the onText callback (worker-driven).
     private func makeTranscriber() -> Transcriber {
         if let transcriber { return transcriber }
-        let model = settings.whisperModel   // e.g. "base.en"
-        if let url = Bundle.main.url(forResource: "ggml-\(model)", withExtension: "bin") {
-            transcriber = WhisperTranscriber(modelURL: url)
+        let name = settings.whisperModel   // e.g. "small.en"
+        if let url = Bundle.main.url(forResource: "ggml-\(name)", withExtension: "bin") {
+            transcriber = WhisperTranscriber(modelURL: url) { [weak self] phrase in
+                guard let self else { return }
+                self.transcript.append(phrase + " ")
+                self.model.status = "Heard: …\(String(self.transcript.recent.suffix(80)))"
+            }
         } else {
             model_missing_warning()
             transcriber = StubTranscriber()
@@ -145,20 +150,14 @@ final class AppCore: NSObject, NSApplicationDelegate {
             model.status = "Stopped listening."
             return
         }
+        // Build the transcriber (starts its worker loop). Feed it raw audio;
+        // transcribed phrases arrive via the onText callback set in makeTranscriber().
         let transcriber = makeTranscriber()
+        transcript.clear()
         Task { @MainActor in
             do {
-                try await audio.start { [weak self] pcm in
-                    guard let self else { return }
-                    Task {
-                        let text = await transcriber.transcribe(pcm)
-                        if !text.isEmpty {
-                            self.transcript.append(text + " ")
-                            await MainActor.run {
-                                self.model.status = "Heard: …\(String(self.transcript.recent.suffix(60)))"
-                            }
-                        }
-                    }
+                try await audio.start { pcm in
+                    Task { _ = await transcriber.transcribe(pcm) }
                 }
                 isListening = true
                 model.listening = true
