@@ -26,7 +26,8 @@ final class WhisperTranscriber: Transcriber {
     ///   - modelURL: ggml model path (e.g. ggml-small.en.bin)
     ///   - onText: called on the main actor with each newly transcribed phrase.
     init(modelURL: URL, onText: @escaping (String) -> Void) {
-        let params = WhisperParams(strategy: .greedy)
+        // Beam search (vs greedy) reduces repetition/errors per the Whisper docs.
+        let params = WhisperParams(strategy: .beamSearch)
         params.language = .english
         params.translate = false
         params.no_context = true
