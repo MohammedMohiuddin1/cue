@@ -23,8 +23,26 @@ final class AppCore: NSObject, NSApplicationDelegate {
     // Listen (audio → transcript) wiring.
     private let transcript = TranscriptBuffer(maxChars: 4000)
     private let audio = AudioCapture()
-    private var transcriber: Transcriber = StubTranscriber()
+    private var transcriber: Transcriber?   // lazily created on first Listen
     private var isListening = false
+
+    /// Build the whisper transcriber from the bundled model, or fall back to the
+    /// stub if the model resource is missing (keeps the app usable either way).
+    private func makeTranscriber() -> Transcriber {
+        if let transcriber { return transcriber }
+        let model = settings.whisperModel   // e.g. "base.en"
+        if let url = Bundle.main.url(forResource: "ggml-\(model)", withExtension: "bin") {
+            transcriber = WhisperTranscriber(modelURL: url)
+        } else {
+            model_missing_warning()
+            transcriber = StubTranscriber()
+        }
+        return transcriber!
+    }
+
+    private func model_missing_warning() {
+        model.status = "Whisper model ggml-\(settings.whisperModel).bin not found in app bundle."
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory) // menu-bar app, no dock icon
@@ -84,23 +102,24 @@ final class AppCore: NSObject, NSApplicationDelegate {
             model.status = "Stopped listening."
             return
         }
+        let transcriber = makeTranscriber()
         Task { @MainActor in
             do {
                 try await audio.start { [weak self] pcm in
                     guard let self else { return }
-                    let level = AudioCapture.level(of: pcm)
-                    Task { @MainActor in
-                        // Live feedback that capture is flowing.
-                        self.model.status = String(format: "Listening…  level %.3f", level)
-                    }
                     Task {
-                        let text = await self.transcriber.transcribe(pcm)
-                        if !text.isEmpty { self.transcript.append(text + " ") }
+                        let text = await transcriber.transcribe(pcm)
+                        if !text.isEmpty {
+                            self.transcript.append(text + " ")
+                            await MainActor.run {
+                                self.model.status = "Heard: …\(String(self.transcript.recent.suffix(60)))"
+                            }
+                        }
                     }
                 }
                 isListening = true
                 model.listening = true
-                model.status = "Listening…"
+                model.status = "Listening… (speak or play audio, then press ⌘↩ to answer)"
             } catch {
                 model.status = "Audio capture needs Screen Recording permission (System Settings ▸ Privacy & Security ▸ Screen Recording). \(error.localizedDescription)"
             }

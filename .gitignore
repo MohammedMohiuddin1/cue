@@ -9,3 +9,5 @@ OpenCluelyCore/.build/
 xcuserdata/
 **/xcuserdata/
 DerivedData/
+ggml-*.bin
+*.bin

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AA58D65430095EDD00355097 /* OpenCluelyCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA58D65330095EDD00355097 /* OpenCluelyCore */; };
+		AA58D683300965CB00355097 /* SwiftWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = AA58D682300965CB00355097 /* SwiftWhisper */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA58D65430095EDD00355097 /* OpenCluelyCore in Frameworks */,
+				AA58D683300965CB00355097 /* SwiftWhisper in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +128,7 @@
 			name = cluelyopen;
 			packageProductDependencies = (
 				AA58D65330095EDD00355097 /* OpenCluelyCore */,
+				AA58D682300965CB00355097 /* SwiftWhisper */,
 			);
 			productName = cluelyopen;
 			productReference = AA58D61B3009389200355097 /* cluelyopen.app */;
@@ -211,6 +214,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA58D65130095D4A00355097 /* XCLocalSwiftPackageReference "../OpenCluelyCore" */,
+				AA58D681300965CB00355097 /* XCRemoteSwiftPackageReference "SwiftWhisper" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA58D61C3009389200355097 /* Products */;
@@ -602,11 +606,27 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AA58D681300965CB00355097 /* XCRemoteSwiftPackageReference "SwiftWhisper" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/exPHAT/SwiftWhisper.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		AA58D65330095EDD00355097 /* OpenCluelyCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA58D65130095D4A00355097 /* XCLocalSwiftPackageReference "../OpenCluelyCore" */;
 			productName = OpenCluelyCore;
+		};
+		AA58D682300965CB00355097 /* SwiftWhisper */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA58D681300965CB00355097 /* XCRemoteSwiftPackageReference "SwiftWhisper" */;
+			productName = SwiftWhisper;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
