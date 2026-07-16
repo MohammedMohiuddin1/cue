@@ -32,6 +32,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private var transcriber: Transcriber?   // lazily created on first Listen
     private var isListening = false
 
+    // Read Screen (OCR) wiring.
+    private let screenReader = ScreenReader()
+
     /// Build the whisper transcriber from the bundled model, or fall back to the
     /// stub if the model resource is missing (keeps the app usable either way).
     /// Transcribed phrases arrive via the onText callback (worker-driven).
@@ -84,6 +87,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onSubmit: { [weak self] q in self?.askUsingCurrentContext(q) },
             onToggleListen: { [weak self] in self?.toggleListen() },
             onToggleInvisible: { [weak self] in self?.toggleInvisible() },
+            onReadScreen: { [weak self] in self?.readScreen() },
             onSelectModel: { [weak self] name in self?.selectModel(name) }
         )
         let host = NSHostingView(rootView: view)
@@ -164,6 +168,27 @@ final class AppCore: NSObject, NSApplicationDelegate {
                 model.status = "Listening… (speak or play audio, then press ⌘↩ to answer)"
             } catch {
                 model.status = "Audio capture needs Screen Recording permission (System Settings ▸ Privacy & Security ▸ Screen Recording). \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Read Screen (OCR)
+
+    private func readScreen() {
+        model.query = "Answer the question on my screen."
+        model.answer = ""
+        model.status = "Reading screen…"
+        Task { @MainActor in
+            do {
+                let text = try await screenReader.readScreen()
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    model.status = "Nothing readable found on screen."
+                    return
+                }
+                ask("Answer or solve the question shown on the screen.", context: .text(trimmed))
+            } catch {
+                model.status = "Read screen failed: \(error.localizedDescription)"
             }
         }
     }

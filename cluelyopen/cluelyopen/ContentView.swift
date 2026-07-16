@@ -27,6 +27,7 @@ struct OverlayBarView: View {
     var onSubmit: (String) -> Void
     var onToggleListen: () -> Void
     var onToggleInvisible: () -> Void
+    var onReadScreen: () -> Void
     var onSelectModel: (String) -> Void
 
     var body: some View {
@@ -78,6 +79,15 @@ struct OverlayBarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Listen to the meeting audio, then press ⌘↩ to answer")
+
+                // Read Screen (OCR) — answer a question visible on screen.
+                Button(action: onReadScreen) {
+                    Label("Read Screen", systemImage: "eye")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Read the question on your screen and answer it")
 
                 // Invisibility toggle. OFF = normal visible window;
                 // ON = hidden from screen-share/recording.
