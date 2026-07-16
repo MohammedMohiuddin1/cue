@@ -28,10 +28,22 @@ final class OverlayBarWindow: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
-        sharingType = .none
+        // Default: VISIBLE to screen capture. The user turns on "invisible"
+        // (capture-excluded) mode explicitly via the toolbar toggle.
+        sharingType = .readOnly
         contentView = content
     }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// Whether the panel is currently hidden from screen-share/recording.
+    var isCaptureExcluded: Bool { sharingType == .none }
+
+    /// Toggle capture exclusion. Returns the new state.
+    @discardableResult
+    func toggleCaptureExclusion() -> Bool {
+        sharingType = (sharingType == .none) ? .readOnly : .none
+        return isCaptureExcluded
+    }
 }

@@ -71,9 +71,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
         let view = OverlayBarView(
             model: model,
             onSubmit: { [weak self] q in self?.askUsingCurrentContext(q) },
-            onScreenshot: { [weak self] in self?.model.status = "Screenshot: coming soon" },
-            onReadScreen: { [weak self] in self?.model.status = "Read screen: coming soon" },
-            onToggleListen: { [weak self] in self?.toggleListen() }
+            onToggleListen: { [weak self] in self?.toggleListen() },
+            onToggleInvisible: { [weak self] in self?.toggleInvisible() }
         )
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(x: 0, y: 0, width: 560, height: 120)
@@ -90,6 +89,16 @@ final class AppCore: NSObject, NSApplicationDelegate {
         } else {
             overlay.orderFrontRegardless()
         }
+    }
+
+    /// Toggle whether the overlay is hidden from screen-share / recording.
+    private func toggleInvisible() {
+        guard let overlay else { return }
+        let nowInvisible = overlay.toggleCaptureExclusion()
+        model.invisible = nowInvisible
+        model.status = nowInvisible
+            ? "Invisible mode ON — hidden from screen-share (not from ScreenCaptureKit recorders on macOS 15+)."
+            : "Visible mode — everyone can see this window."
     }
 
     // MARK: - Listen (audio → transcript)

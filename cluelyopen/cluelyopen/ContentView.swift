@@ -14,6 +14,7 @@ final class AnswerModel: ObservableObject {
     @Published var answer: String = ""
     @Published var status: String = ""
     @Published var listening: Bool = false
+    @Published var invisible: Bool = false   // hidden from screen-share when true
 }
 
 /// The translucent command bar: an input row plus a toolbar row of feature icons.
@@ -22,9 +23,8 @@ struct OverlayBarView: View {
     @State private var input: String = ""
 
     var onSubmit: (String) -> Void
-    var onScreenshot: () -> Void
-    var onReadScreen: () -> Void
     var onToggleListen: () -> Void
+    var onToggleInvisible: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -64,24 +64,37 @@ struct OverlayBarView: View {
             }
 
             HStack(spacing: 16) {
-                toolbarButton("photo", help: "Screenshot a region", action: onScreenshot)
-                toolbarButton("eye", help: "Read the screen", action: onReadScreen)
-                toolbarButton(model.listening ? "waveform.circle.fill" : "waveform",
-                              help: "Listen to the meeting", action: onToggleListen)
+                // Listen (meeting audio → answer). Working.
+                Button(action: onToggleListen) {
+                    Label(model.listening ? "Listening" : "Listen",
+                          systemImage: model.listening ? "waveform.circle.fill" : "waveform")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                        .foregroundStyle(model.listening ? .blue : .primary)
+                }
+                .buttonStyle(.plain)
+                .help("Listen to the meeting audio, then press ⌘↩ to answer")
+
+                // Invisibility toggle. OFF = normal visible window;
+                // ON = hidden from screen-share/recording.
+                Button(action: onToggleInvisible) {
+                    Label(model.invisible ? "Invisible" : "Visible",
+                          systemImage: model.invisible ? "eye.slash.fill" : "eye")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                        .foregroundStyle(model.invisible ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(model.invisible
+                      ? "Invisible to screen-share (click to make visible)"
+                      : "Visible to everyone (click to hide from screen-share)")
+
                 Spacer()
             }
         }
         .padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         .frame(width: 560)
-    }
-
-    private func toolbarButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 
     private func submit() {
