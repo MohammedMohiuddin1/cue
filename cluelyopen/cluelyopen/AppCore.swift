@@ -207,6 +207,15 @@ final class AppCore: NSObject, NSApplicationDelegate {
         model.query = q
         model.answer = ""
         model.status = "Thinking…"
+        model.collapsed = false
+        model.showHistory = false
+        // Label describing where the context came from (like Cluely's "Viewed screen").
+        switch context {
+        case .text where isListening: model.contextLabel = "From meeting audio"
+        case .text: model.contextLabel = "Viewed screen"
+        case .image: model.contextLabel = "From screenshot"
+        case .none: model.contextLabel = ""
+        }
         NSLog("OpenCluely ask: q=\"%@\" model=%@", q, settings.textModel)
         Task { @MainActor in
             var tokenCount = 0
@@ -219,6 +228,10 @@ final class AppCore: NSObject, NSApplicationDelegate {
                 NSLog("OpenCluely ask: done, %d tokens, answerLen=%d", tokenCount, model.answer.count)
                 if tokenCount == 0 {
                     model.status = "No response from model (0 tokens). Check the model name in Ollama."
+                } else {
+                    // Save the completed exchange to history.
+                    model.history.append(Exchange(query: q, answer: model.answer,
+                                                   contextLabel: model.contextLabel))
                 }
             } catch LLMError.notRunning {
                 NSLog("OpenCluely ask: LLMError.notRunning")
