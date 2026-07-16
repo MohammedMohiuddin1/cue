@@ -105,6 +105,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onToggleListen: { [weak self] in self?.toggleListen() },
             onToggleInvisible: { [weak self] in self?.toggleInvisible() },
             onReadScreen: { [weak self] in self?.readScreen() },
+            onScreenshot: { [weak self] in self?.captureScreenshot() },
             onSelectModel: { [weak self] name in self?.selectModel(name) },
             onEndSession: { [weak self] in self?.endSession() }
         )
@@ -226,6 +227,37 @@ final class AppCore: NSObject, NSApplicationDelegate {
             } catch {
                 model.status = "Read screen failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    // MARK: - Region Screenshot (→ vision model)
+
+    private func captureScreenshot() {
+        Task { @MainActor in
+            // Ensure a vision-capable model is available; pick one if the default
+            // isn't installed, else guide the user to pull one.
+            let installed = await ModelList.installed()
+            let visionCandidates = installed.filter { name in
+                ["llava", "vl", "vision", "moondream", "bakllava", "minicpm"].contains {
+                    name.lowercased().contains($0)
+                }
+            }
+            if !installed.contains(settings.visionModel) {
+                if let v = visionCandidates.first {
+                    settings.visionModel = v
+                } else {
+                    model.startSessionIfNeeded()
+                    model.status = "No vision model found. In Terminal: ollama pull llava"
+                    return
+                }
+            }
+
+            model.status = "Select a region…"
+            guard let png = await ScreenshotCapture.captureRegion() else {
+                model.status = "Screenshot canceled."
+                return
+            }
+            ask("Solve or answer the problem shown in this image.", context: .image(png))
         }
     }
 

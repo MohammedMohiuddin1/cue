@@ -114,6 +114,7 @@ struct OverlayBarView: View {
     var onToggleListen: () -> Void
     var onToggleInvisible: () -> Void
     var onReadScreen: () -> Void
+    var onScreenshot: () -> Void
     var onSelectModel: (String) -> Void
     var onEndSession: () -> Void
     @State private var openedSession: ArchivedSession?
@@ -301,6 +302,10 @@ struct OverlayBarView: View {
 
     private var toolbarRow: some View {
         HStack(spacing: 18) {
+            // Screenshot a region → vision model.
+            iconButton("camera.viewfinder", active: false, activeColor: .primary,
+                       tip: "Screenshot a region and solve it", action: onScreenshot)
+
             // Listen — waveform, blue + filled when active.
             iconButton(model.listening ? "waveform.circle.fill" : "waveform",
                        active: model.listening, activeColor: .blue,
