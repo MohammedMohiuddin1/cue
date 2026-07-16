@@ -134,7 +134,9 @@ struct OverlayBarView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 2)
         }
-        .frame(maxHeight: 300)
+        // A DEFINITE height — maxHeight alone collapses to 0 inside the
+        // auto-sizing NSHostingView, which is why content wasn't visible.
+        .frame(height: 260)
     }
 
     private var historyBox: some View {
@@ -158,7 +160,7 @@ struct OverlayBarView: View {
                 }
             }
         }
-        .frame(maxHeight: 320)
+        .frame(height: 300)
     }
 
     // MARK: - Input row
