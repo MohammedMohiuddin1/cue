@@ -47,7 +47,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
                 let clean = Self.cleanSpeech(phrase)
                 guard !clean.isEmpty else { return }
                 self.transcript.append(clean + " ")
-                // Show the full growing transcript in the conversation box.
+                // Live transcript grows in the current session box.
+                self.model.startSessionIfNeeded()
                 self.model.liveTranscript = self.transcript.recent
                 self.model.status = ""
             }
@@ -104,7 +105,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onToggleListen: { [weak self] in self?.toggleListen() },
             onToggleInvisible: { [weak self] in self?.toggleInvisible() },
             onReadScreen: { [weak self] in self?.readScreen() },
-            onSelectModel: { [weak self] name in self?.selectModel(name) }
+            onSelectModel: { [weak self] name in self?.selectModel(name) },
+            onEndSession: { [weak self] in self?.endSession() }
         )
         let host = NSHostingView(rootView: view)
         // Let the hosting view drive the window size so the answer area can grow.
@@ -160,6 +162,15 @@ final class AppCore: NSObject, NSApplicationDelegate {
             : "Visible mode — everyone can see this window."
     }
 
+    // MARK: - Session
+
+    private func endSession() {
+        // Stop listening if active, then archive + clear via the model.
+        if isListening { audio.stop(); isListening = false }
+        transcript.clear()
+        model.endSession()
+    }
+
     // MARK: - Listen (audio → transcript)
 
     private func toggleListen() {
@@ -167,9 +178,15 @@ final class AppCore: NSObject, NSApplicationDelegate {
             audio.stop()
             isListening = false
             model.listening = false
+            // Commit the captured transcript as a session item, then clear the live line.
+            let captured = transcript.recent.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !captured.isEmpty { model.addTranscript(captured) }
+            transcript.clear()
+            model.liveTranscript = ""
             model.status = "Stopped listening."
             return
         }
+        model.startSessionIfNeeded()
         // Build the transcriber (starts its worker loop). Feed it raw audio;
         // transcribed phrases arrive via the onText callback set in makeTranscriber().
         let transcriber = makeTranscriber()
@@ -223,6 +240,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
     }
 
     private func ask(_ q: String, context: AnswerContext) {
+        model.startSessionIfNeeded()
         model.query = q
         model.answer = ""
         model.status = "Thinking…"
@@ -248,9 +266,11 @@ final class AppCore: NSObject, NSApplicationDelegate {
                 if tokenCount == 0 {
                     model.status = "No response from model (0 tokens). Check the model name in Ollama."
                 } else {
-                    // Save the completed exchange to history.
-                    model.history.append(Exchange(query: q, answer: model.answer,
-                                                   contextLabel: model.contextLabel))
+                    // Commit the completed exchange to the current session log,
+                    // then clear the live streaming fields.
+                    model.addExchange(query: q, answer: model.answer,
+                                      contextLabel: model.contextLabel)
+                    model.query = ""; model.answer = ""; model.contextLabel = ""
                 }
             } catch LLMError.notRunning {
                 NSLog("OpenCluely ask: LLMError.notRunning")

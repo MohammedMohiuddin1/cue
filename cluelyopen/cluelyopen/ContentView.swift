@@ -8,41 +8,99 @@
 import SwiftUI
 import Combine
 
-/// One completed Q&A exchange, kept for the History view.
-struct Exchange: Identifiable {
+/// One entry in a session's continuous log — either a Q&A exchange or a chunk
+/// of transcribed meeting audio.
+struct SessionItem: Identifiable {
+    enum Kind { case exchange(query: String, answer: String, contextLabel: String)
+                case transcript(String) }
     let id = UUID()
-    let query: String
-    let answer: String
-    let contextLabel: String
+    let kind: Kind
+    let time = Date()
 }
 
-/// Holds the live query, streamed answer, and a status line for the overlay.
+/// A finished (archived) session, browsable from History.
+struct ArchivedSession: Identifiable {
+    let id = UUID()
+    let startedAt: Date
+    let endedAt: Date
+    let items: [SessionItem]
+
+    var title: String {
+        let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"
+        return f.string(from: startedAt)
+    }
+}
+
+/// Holds the live overlay state, the CURRENT session's log, and archived sessions.
 final class AnswerModel: ObservableObject {
+    // Live streaming state (the in-progress answer / transcript).
     @Published var query: String = ""
     @Published var answer: String = ""
     @Published var status: String = ""
-    @Published var liveTranscript: String = ""  // growing transcript while listening
-    @Published var contextLabel: String = ""   // e.g. "Viewed screen", "From meeting audio"
+    @Published var liveTranscript: String = ""
+    @Published var contextLabel: String = ""
+
+    // Session state.
+    @Published var sessionActive: Bool = false
+    @Published var sessionItems: [SessionItem] = []   // current session's log
+    @Published var archived: [ArchivedSession] = []   // past sessions (History)
+    private var sessionStart = Date()
+
+    // Feature / UI state.
     @Published var listening: Bool = false
-    @Published var invisible: Bool = false      // hidden from screen-share when true
+    @Published var invisible: Bool = false
     @Published var availableModels: [String] = []
     @Published var currentModel: String = ""
-
-    // Conversation-flow UI state.
-    @Published var collapsed: Bool = false      // conversation box hidden when true
+    @Published var collapsed: Bool = false
     @Published var showHistory: Bool = false
-    @Published var history: [Exchange] = []
 
-    /// True when there's something to show in the conversation box.
+    /// True when there's anything to show in the current session's box.
     var hasConversation: Bool {
-        !query.isEmpty || !answer.isEmpty || !status.isEmpty || !liveTranscript.isEmpty
+        sessionActive && (!sessionItems.isEmpty || !answer.isEmpty
+                          || !liveTranscript.isEmpty || !status.isEmpty)
     }
 
-    /// Placeholder text that reflects the current state (like Cluely).
     var placeholder: String {
         if listening { return "Ask about the conversation, or ⌘↩ for Answer" }
-        if !answer.isEmpty { return "Ask follow-up" }
+        if !sessionItems.isEmpty { return "Ask follow-up" }
         return "Ask anything, or ⌘↩ for Answer"
+    }
+
+    // MARK: - Session lifecycle
+
+    /// Called at the first action; a no-op if a session is already running.
+    func startSessionIfNeeded() {
+        guard !sessionActive else { return }
+        sessionActive = true
+        sessionStart = Date()
+        sessionItems = []
+        collapsed = false
+        showHistory = false
+    }
+
+    /// Append a completed Q&A to the current session log.
+    func addExchange(query: String, answer: String, contextLabel: String) {
+        startSessionIfNeeded()
+        sessionItems.append(SessionItem(kind: .exchange(query: query, answer: answer,
+                                                        contextLabel: contextLabel)))
+    }
+
+    /// Append a chunk of transcribed audio to the current session log.
+    func addTranscript(_ text: String) {
+        startSessionIfNeeded()
+        sessionItems.append(SessionItem(kind: .transcript(text)))
+    }
+
+    /// End the session: archive it, clear the live state, ready for a fresh one.
+    func endSession() {
+        if sessionActive && !sessionItems.isEmpty {
+            archived.append(ArchivedSession(startedAt: sessionStart, endedAt: Date(),
+                                            items: sessionItems))
+        }
+        sessionActive = false
+        sessionItems = []
+        query = ""; answer = ""; status = ""; liveTranscript = ""; contextLabel = ""
+        listening = false
     }
 }
 
@@ -57,6 +115,8 @@ struct OverlayBarView: View {
     var onToggleInvisible: () -> Void
     var onReadScreen: () -> Void
     var onSelectModel: (String) -> Void
+    var onEndSession: () -> Void
+    @State private var openedSession: ArchivedSession?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -79,84 +139,140 @@ struct OverlayBarView: View {
         .frame(width: 620)
     }
 
-    // MARK: - Conversation box
+    // MARK: - Conversation box (continuous session log)
 
     private var conversationBox: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                // Live transcript while listening (grows as you speak).
-                if model.listening && !model.liveTranscript.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "waveform").font(.caption).foregroundStyle(.blue)
-                        Text("Live transcript").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Text(model.liveTranscript)
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if !model.answer.isEmpty || !model.query.isEmpty { Divider() }
+        VStack(alignment: .leading, spacing: 6) {
+            // Session header with an End Session button.
+            HStack {
+                Circle().fill(.green).frame(width: 7, height: 7)
+                Text("Session").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(action: onEndSession) {
+                    Label("End", systemImage: "stop.circle")
+                        .labelStyle(.titleAndIcon).font(.caption)
+                        .foregroundStyle(.red)
                 }
-                if !model.query.isEmpty {
-                    Text(model.query)
-                        .font(.callout)
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(.blue.opacity(0.85), in: Capsule())
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                if !model.contextLabel.isEmpty {
-                    Text(model.contextLabel)
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if !model.answer.isEmpty {
-                    Text(model.answer)
-                        .font(.callout)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    // Copy button under the answer (like Cluely).
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(model.answer, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy answer")
-                }
-                if !model.status.isEmpty {
-                    Text(model.status)
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                .buttonStyle(.plain)
+                .help("End this session (archived to History)")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 2)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        // Everything that already happened this session.
+                        ForEach(model.sessionItems) { item in
+                            sessionItemView(item)
+                        }
+                        // The in-progress answer (streaming), not yet committed.
+                        if !model.answer.isEmpty {
+                            answerView(model.answer, contextLabel: model.contextLabel,
+                                       query: model.query)
+                        }
+                        // The live transcript while listening.
+                        if model.listening && !model.liveTranscript.isEmpty {
+                            transcriptView(model.liveTranscript, live: true)
+                        }
+                        if !model.status.isEmpty {
+                            Text(model.status).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 260)
+                .onChange(of: model.sessionItems.count) { proxy.scrollTo("bottom") }
+                .onChange(of: model.answer) { proxy.scrollTo("bottom") }
+                .onChange(of: model.liveTranscript) { proxy.scrollTo("bottom") }
+            }
         }
-        // A DEFINITE height — maxHeight alone collapses to 0 inside the
-        // auto-sizing NSHostingView, which is why content wasn't visible.
-        .frame(height: 260)
     }
+
+    @ViewBuilder
+    private func sessionItemView(_ item: SessionItem) -> some View {
+        switch item.kind {
+        case .exchange(let q, let a, let ctx):
+            answerView(a, contextLabel: ctx, query: q)
+        case .transcript(let t):
+            transcriptView(t, live: false)
+        }
+    }
+
+    private func transcriptView(_ text: String, live: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform").font(.caption).foregroundStyle(.blue)
+                Text(live ? "Live transcript" : "Transcript").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(text).font(.callout).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func answerView(_ answer: String, contextLabel: String, query: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if !query.isEmpty {
+                Text(query)
+                    .font(.callout)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(.blue.opacity(0.85), in: Capsule())
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            if !contextLabel.isEmpty {
+                Text(contextLabel).font(.caption).foregroundStyle(.secondary)
+            }
+            Text(answer).font(.callout).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(answer, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc").font(.caption).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain).help("Copy answer")
+        }
+    }
+
+    // MARK: - History (archived sessions)
 
     private var historyBox: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("History").font(.headline)
-                    Spacer()
-                    Button("Done") { model.showHistory = false }.buttonStyle(.plain).font(.caption)
-                }
-                if model.history.isEmpty {
-                    Text("No past answers yet.").font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(model.history.reversed()) { ex in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(ex.query).font(.callout).foregroundStyle(.blue)
-                        Text(ex.answer).font(.caption).foregroundStyle(.primary).lineLimit(4)
+                    if let opened = openedSession {
+                        Button { openedSession = nil } label: {
+                            Label("Sessions", systemImage: "chevron.left").font(.caption)
+                        }.buttonStyle(.plain)
+                        Spacer()
+                        Text(opened.title).font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("History").font(.headline)
+                        Spacer()
+                        Button("Done") { model.showHistory = false }.buttonStyle(.plain).font(.caption)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Divider()
+                }
+
+                if let opened = openedSession {
+                    ForEach(opened.items) { item in sessionItemView(item) }
+                } else if model.archived.isEmpty {
+                    Text("No past sessions yet.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.archived.reversed()) { session in
+                        Button { openedSession = session } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.title).font(.callout)
+                                    Text("\(session.items.count) items")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        Divider()
+                    }
                 }
             }
         }
