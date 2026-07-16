@@ -50,10 +50,13 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         config.queueDepth = 5
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
-        // Only the audio output is registered — no screen output means SCK stops
-        // delivering (and we stop touching) video frames.
         try stream.addStreamOutput(self, type: .audio,
                                    sampleHandlerQueue: DispatchQueue(label: "opencluely.audio"))
+        // Register a screen output too so SCK's (unavoidable) video frames have a
+        // consumer — without it, the console spams "stream output NOT found.
+        // Dropping frame". Our delegate ignores non-audio frames.
+        try stream.addStreamOutput(self, type: .screen,
+                                   sampleHandlerQueue: DispatchQueue(label: "opencluely.video"))
         try await stream.startCapture()
         self.stream = stream
     }
