@@ -11,3 +11,5 @@ xcuserdata/
 DerivedData/
 ggml-*.bin
 *.bin
+*.mlmodelc
+coreml-*.zip

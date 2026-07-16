@@ -42,8 +42,9 @@ public final class Settings {
         set { store.setString(newValue, forKey: "visionModel") }
     }
     public var whisperModel: String {
-        // medium.en — most accurate English model that's practical on 16GB+ Macs
-        // (~1.5GB). The app bundles ggml-<whisperModel>.bin. Changeable in Settings.
+        // medium.en — most accurate English model; made practical via a bundled
+        // Core ML encoder (Apple Neural Engine acceleration). The app bundles
+        // ggml-<whisperModel>.bin (+ the .mlmodelc). Changeable in Settings.
         get { store.string(forKey: "whisperModel") ?? "medium.en" }
         set { store.setString(newValue, forKey: "whisperModel") }
     }

@@ -13,6 +13,7 @@
 
 import Foundation
 import SwiftWhisper
+internal import whisper_cpp
 
 final class WhisperTranscriber: Transcriber {
     private let whisper: Whisper
