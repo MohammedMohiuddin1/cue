@@ -3,55 +3,69 @@
 //  cluelyopen
 //
 //  Fully-local speech-to-text using bundled whisper.cpp (via SwiftWhisper).
-//  Buffers incoming PCM until it has ~5 seconds, then transcribes that batch
-//  so results are coherent phrases rather than word fragments.
+//  Continuously accumulates incoming PCM and transcribes ~6s windows with a
+//  short overlap so words at window boundaries aren't lost and no audio is
+//  dropped while whisper is busy.
 //
 
 import Foundation
 import SwiftWhisper
 
-/// Wraps SwiftWhisper's `Whisper` behind our `Transcriber` protocol.
-/// Thread-safety: `transcribe(_:)` may be called from multiple tasks; access to
-/// the sample buffer is serialized with an actor.
 final class WhisperTranscriber: Transcriber {
     private let whisper: Whisper
-    private let batcher = SampleBatcher(minSamples: 16_000 * 5) // ~5s at 16 kHz
+    private let store = SampleStore(
+        windowSamples: 16_000 * 6,   // ~6s window
+        hopSamples: 16_000 * 5       // advance ~5s each time (1s overlap)
+    )
 
     /// - Parameter modelURL: path to a ggml whisper model, e.g. ggml-base.en.bin
     init(modelURL: URL) {
-        self.whisper = Whisper(fromFileURL: modelURL)
+        // Force English (bundled model is base.en); without this whisper
+        // auto-detects and can mis-detect, producing lossy output.
+        let params = WhisperParams(strategy: .greedy)
+        params.language = .english
+        params.translate = false
+        params.no_context = true
+        params.suppress_blank = true
+        params.single_segment = false
+        self.whisper = Whisper(fromFileURL: modelURL, withParams: params)
     }
 
     func transcribe(_ pcm: [Float]) async -> String {
-        // Accumulate; only run whisper once we have enough audio.
-        guard let batch = await batcher.add(pcm) else { return "" }
-        NSLog("OpenCluely whisper: transcribing batch of %d samples (~%.1fs)",
-              batch.count, Double(batch.count) / 16_000.0)
+        // Append; get a window to run only when enough new audio has arrived.
+        guard let window = await store.append(pcm) else { return "" }
         do {
-            let segments = try await whisper.transcribe(audioFrames: batch)
+            let segments = try await whisper.transcribe(audioFrames: window)
             let text = segments.map(\.text).joined()
-            NSLog("OpenCluely whisper: got %d segments, text=\"%@\"", segments.count, text)
-            return text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            NSLog("OpenCluely whisper: window %d samples -> \"%@\"", window.count, text)
+            return text.isEmpty ? "" : text
         } catch {
-            NSLog("OpenCluely whisper: transcribe error: %@", String(describing: error))
+            NSLog("OpenCluely whisper: error %@", String(describing: error))
             return ""
         }
     }
 }
 
-/// Serializes appends and hands back a full batch once the threshold is reached.
-private actor SampleBatcher {
+/// Accumulates samples and yields fixed-size overlapping windows. Keeps a tail
+/// so audio is never dropped while whisper is busy.
+private actor SampleStore {
     private var buffer: [Float] = []
-    private let minSamples: Int
+    private let windowSamples: Int
+    private let hopSamples: Int
 
-    init(minSamples: Int) { self.minSamples = minSamples }
+    init(windowSamples: Int, hopSamples: Int) {
+        self.windowSamples = windowSamples
+        self.hopSamples = hopSamples
+    }
 
-    /// Returns a batch to transcribe once enough audio has accumulated, else nil.
-    func add(_ pcm: [Float]) -> [Float]? {
+    /// Append new audio; return the next window to transcribe if ready, else nil.
+    func append(_ pcm: [Float]) -> [Float]? {
         buffer.append(contentsOf: pcm)
-        guard buffer.count >= minSamples else { return nil }
-        let batch = buffer
-        buffer.removeAll(keepingCapacity: true)
-        return batch
+        guard buffer.count >= windowSamples else { return nil }
+        let window = Array(buffer.prefix(windowSamples))
+        // Advance by hop, keeping the overlap tail for the next window.
+        buffer.removeFirst(min(hopSamples, buffer.count))
+        return window
     }
 }
