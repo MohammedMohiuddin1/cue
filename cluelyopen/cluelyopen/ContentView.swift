@@ -15,6 +15,8 @@ final class AnswerModel: ObservableObject {
     @Published var status: String = ""
     @Published var listening: Bool = false
     @Published var invisible: Bool = false   // hidden from screen-share when true
+    @Published var availableModels: [String] = []
+    @Published var currentModel: String = ""
 }
 
 /// The translucent command bar: an input row plus a toolbar row of feature icons.
@@ -25,6 +27,7 @@ struct OverlayBarView: View {
     var onSubmit: (String) -> Void
     var onToggleListen: () -> Void
     var onToggleInvisible: () -> Void
+    var onSelectModel: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -90,6 +93,24 @@ struct OverlayBarView: View {
                       : "Visible to everyone (click to hide from screen-share)")
 
                 Spacer()
+
+                // Model picker — lists models actually pulled in Ollama.
+                Menu {
+                    if model.availableModels.isEmpty {
+                        Text("No models found — run: ollama pull llama3.2")
+                    }
+                    ForEach(model.availableModels, id: \.self) { name in
+                        Button(name) { onSelectModel(name) }
+                    }
+                } label: {
+                    Label(model.currentModel.isEmpty ? "Model" : model.currentModel,
+                          systemImage: "cpu")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Choose which local model answers")
             }
         }
         .padding(14)

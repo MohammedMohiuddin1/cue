@@ -57,6 +57,11 @@ public final class Settings {
         }
     }
 
+    // NOTE: These are the "best free model" recommendations by RAM tier. They
+    // are only DEFAULTS — the Settings window lets the user pick any pulled
+    // model, and the stored choice overrides these. `qwen3-coder` (~19GB) is the
+    // ideal high-tier pick but must be pulled first; users who haven't pulled it
+    // change the model in Settings.
     private static func defaultText(for tier: RAMTier) -> String {
         switch tier {
         case .high: return "qwen3-coder"

@@ -60,23 +60,44 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Helpers
 
-    /// Extract mono Float samples from a CMSampleBuffer's audio.
-    private static func floatSamples(from sampleBuffer: CMSampleBuffer) -> [Float]? {
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return nil }
-        var length = 0
-        var dataPointer: UnsafeMutablePointer<Int8>?
-        guard CMBlockBufferGetDataPointer(blockBuffer,
-                                          atOffset: 0,
-                                          lengthAtOffsetOut: nil,
-                                          totalLengthOut: &length,
-                                          dataPointerOut: &dataPointer) == kCMBlockBufferNoErr,
-              let ptr = dataPointer else { return nil }
+    private static var didLogFormat = false
 
-        let count = length / MemoryLayout<Float>.size
-        guard count > 0 else { return nil }
-        return ptr.withMemoryRebound(to: Float.self, capacity: count) {
-            Array(UnsafeBufferPointer(start: $0, count: count))
+    /// Extract mono Float samples from a CMSampleBuffer's audio using the
+    /// AudioBufferList API (the reliable way; ScreenCaptureKit delivers audio
+    /// as an AudioBufferList, not a flat Float block).
+    private static func floatSamples(from sampleBuffer: CMSampleBuffer) -> [Float]? {
+        var blockBuffer: CMBlockBuffer?
+        var abl = AudioBufferList(
+            mNumberBuffers: 1,
+            mBuffers: AudioBuffer(mNumberChannels: 1, mDataByteSize: 0, mData: nil)
+        )
+
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: &abl,
+            bufferListSize: MemoryLayout<AudioBufferList>.size,
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr, let data = abl.mBuffers.mData else { return nil }
+
+        let byteCount = Int(abl.mBuffers.mDataByteSize)
+        let floatCount = byteCount / MemoryLayout<Float>.size
+        guard floatCount > 0 else { return nil }
+
+        let floatPtr = data.bindMemory(to: Float.self, capacity: floatCount)
+        let samples = Array(UnsafeBufferPointer(start: floatPtr, count: floatCount))
+
+        if !didLogFormat {
+            didLogFormat = true
+            let maxAmp = samples.map { abs($0) }.max() ?? 0
+            NSLog("OpenCluely audio: %d samples/chunk, first=%.4f maxAmp=%.4f (expect |x|<=1.0 float)",
+                  floatCount, samples.first ?? 0, maxAmp)
         }
+        return samples
     }
 
     /// Simple RMS level (0...1-ish) for a chunk, used to prove capture is live.

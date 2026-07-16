@@ -25,10 +25,15 @@ final class WhisperTranscriber: Transcriber {
     func transcribe(_ pcm: [Float]) async -> String {
         // Accumulate; only run whisper once we have enough audio.
         guard let batch = await batcher.add(pcm) else { return "" }
+        NSLog("OpenCluely whisper: transcribing batch of %d samples (~%.1fs)",
+              batch.count, Double(batch.count) / 16_000.0)
         do {
             let segments = try await whisper.transcribe(audioFrames: batch)
-            return segments.map(\.text).joined()
+            let text = segments.map(\.text).joined()
+            NSLog("OpenCluely whisper: got %d segments, text=\"%@\"", segments.count, text)
+            return text
         } catch {
+            NSLog("OpenCluely whisper: transcribe error: %@", String(describing: error))
             return ""
         }
     }

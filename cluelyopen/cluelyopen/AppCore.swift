@@ -18,7 +18,13 @@ final class AppCore: NSObject, NSApplicationDelegate {
     // Core engine wiring (all local, no network except Ollama on localhost).
     private lazy var settings = Settings(store: UserDefaults.standard, tier: RAMTier.detected())
     private lazy var modes = ModesManager(store: UserDefaults.standard)
-    private lazy var engine = AnswerEngine(client: OllamaClient(), modes: modes, settings: settings)
+    // Use 127.0.0.1 (not "localhost") so macOS doesn't resolve to IPv6 ::1,
+    // where Ollama isn't listening (connection refused).
+    private lazy var engine = AnswerEngine(
+        client: OllamaClient(baseURL: URL(string: "http://127.0.0.1:11434")!),
+        modes: modes,
+        settings: settings
+    )
 
     // Listen (audio → transcript) wiring.
     private let transcript = TranscriptBuffer(maxChars: 4000)
@@ -72,7 +78,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
             model: model,
             onSubmit: { [weak self] q in self?.askUsingCurrentContext(q) },
             onToggleListen: { [weak self] in self?.toggleListen() },
-            onToggleInvisible: { [weak self] in self?.toggleInvisible() }
+            onToggleInvisible: { [weak self] in self?.toggleInvisible() },
+            onSelectModel: { [weak self] name in self?.selectModel(name) }
         )
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(x: 0, y: 0, width: 560, height: 120)
@@ -80,6 +87,30 @@ final class AppCore: NSObject, NSApplicationDelegate {
         panel.setFrameOrigin(settings.overlayOrigin)
         panel.orderFrontRegardless()
         overlay = panel
+
+        model.currentModel = settings.textModel
+        refreshModelList()
+    }
+
+    /// Load the models the user has actually pulled in Ollama, and if the
+    /// currently-selected model isn't installed, auto-pick an installed one so
+    /// the app works out of the box.
+    private func refreshModelList() {
+        Task { @MainActor in
+            let installed = await ModelList.installed()
+            model.availableModels = installed
+            if !installed.contains(settings.textModel), let first = installed.first {
+                settings.textModel = first
+                model.currentModel = first
+                model.status = "Using model: \(first)"
+            }
+        }
+    }
+
+    private func selectModel(_ name: String) {
+        settings.textModel = name
+        model.currentModel = name
+        model.status = "Model set to \(name)"
     }
 
     @objc private func toggleOverlay() {
@@ -148,19 +179,31 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private func ask(_ q: String, context: AnswerContext) {
         model.query = q
         model.answer = ""
-        model.status = ""
+        model.status = "Thinking…"
+        NSLog("OpenCluely ask: q=\"%@\" model=%@", q, settings.textModel)
         Task { @MainActor in
+            var tokenCount = 0
             do {
                 for try await tok in engine.answer(userText: q, context: context) {
+                    tokenCount += 1
                     model.answer += tok
+                    if model.status == "Thinking…" { model.status = "" }
+                }
+                NSLog("OpenCluely ask: done, %d tokens, answerLen=%d", tokenCount, model.answer.count)
+                if tokenCount == 0 {
+                    model.status = "No response from model (0 tokens). Check the model name in Ollama."
                 }
             } catch LLMError.notRunning {
+                NSLog("OpenCluely ask: LLMError.notRunning")
                 model.status = "Ollama isn't running. Start it in Terminal: ollama serve"
             } catch LLMError.modelMissing(let m) {
+                NSLog("OpenCluely ask: LLMError.modelMissing(%@)", m)
                 model.status = "Model missing. In Terminal: ollama pull \(m)"
             } catch LLMError.http(let code) {
+                NSLog("OpenCluely ask: LLMError.http(%d)", code)
                 model.status = "Ollama error (HTTP \(code))."
             } catch {
+                NSLog("OpenCluely ask: error %@", String(describing: error))
                 model.status = "Error: \(error.localizedDescription)"
             }
         }
