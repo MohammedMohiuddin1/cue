@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hero.png" alt="Cue — your free, local interview copilot" width="100%">
+</p>
+
 # Cue
 
 A **free, open-source, 100% local** macOS assistant for technical interviews — DSA, online assessments, competitive programming, **and** behavioral/resume questions. Invisible overlay, live meeting-audio transcription, screen reading, screenshots, and AI answers — all running on your own Mac.
@@ -24,6 +28,25 @@ No accounts. No subscriptions. Your choice of a fully-local model or your own cl
 - **Local or cloud** — run fully offline via Ollama, or bring your own OpenAI / Anthropic / Gemini key.
 
 ---
+
+<!--
+## Screenshots
+
+Add your PNGs to assets/ with these names, then uncomment this section:
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-overlay.png" alt="The Cue overlay bar answering a question"><br><sub><b>Ask anything</b> — the overlay bar streams an answer inline.</sub></td>
+    <td width="50%"><img src="assets/screenshot-listen.png" alt="Live transcription during a session"><br><sub><b>Listen</b> — live meeting-audio transcription in a session.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-onboarding.png" alt="The Cue onboarding wizard"><br><sub><b>Onboarding</b> — first-run setup and permissions.</sub></td>
+    <td width="50%"><img src="assets/screenshot-settings.png" alt="Cue settings — provider, modes, materials"><br><sub><b>Settings</b> — provider, models, modes, and reference materials.</sub></td>
+  </tr>
+</table>
+
+---
+-->
 
 ## Requirements
 
