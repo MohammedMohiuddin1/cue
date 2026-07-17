@@ -7,12 +7,14 @@
 
 import AppKit
 import SwiftUI
+import Combine
 import OpenCluelyCore
 
 struct SettingsRoot: View {
     let settings: OpenCluelyCore.Settings
     let modes: ModesManager
     let installedModels: [String]
+    let permissions: PermissionsManager
 
     @State private var textModel: String
     @State private var visionModel: String
@@ -20,10 +22,15 @@ struct SettingsRoot: View {
     @State private var activeModeID: String
     @State private var materials: String
 
-    init(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String]) {
+    @State private var hasScreen = false
+    @State private var hasAccess = false
+    private let ticker = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+
+    init(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String], permissions: PermissionsManager) {
         self.settings = settings
         self.modes = modes
         self.installedModels = installedModels
+        self.permissions = permissions
         _textModel = State(initialValue: settings.textModel)
         _visionModel = State(initialValue: settings.visionModel)
         _whisperModel = State(initialValue: settings.whisperModel)
@@ -38,10 +45,19 @@ struct SettingsRoot: View {
             generalTab.tabItem { Label("General", systemImage: "gearshape") }
             modesTab.tabItem { Label("Modes", systemImage: "person.crop.rectangle.stack") }
             materialsTab.tabItem { Label("Materials", systemImage: "doc.text") }
+            permissionsTab.tabItem { Label("Permissions", systemImage: "lock.shield") }
             aboutTab.tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 580, height: 460)
         .padding()
+        .onReceive(ticker) { _ in
+            hasScreen = permissions.hasScreenRecording
+            hasAccess = permissions.hasAccessibility
+        }
+        .onAppear {
+            hasScreen = permissions.hasScreenRecording
+            hasAccess = permissions.hasAccessibility
+        }
     }
 
     // MARK: General
@@ -156,6 +172,55 @@ struct SettingsRoot: View {
         .padding(4)
     }
 
+    // MARK: Permissions
+
+    private var permissionsTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Permissions").font(.title3).bold()
+            Text("OpenCluely uses these macOS permissions. Everything runs locally — these only gate OS capabilities.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            permissionRow(
+                title: "Screen Recording",
+                subtitle: "Captures meeting audio, reads your screen, and takes screenshots.",
+                granted: hasScreen,
+                open: { permissions.openScreenRecordingSettings() }
+            )
+            permissionRow(
+                title: "Accessibility",
+                subtitle: "Enables global keyboard shortcuts (⌘\\, ⌘↩, ⌘+arrows).",
+                granted: hasAccess,
+                open: { permissions.openAccessibilitySettings() }
+            )
+
+            Text("If you just enabled a permission, you may need to quit and relaunch OpenCluely for it to take effect.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func permissionRow(title: String, subtitle: String, granted: Bool, open: @escaping () -> Void) -> some View {
+        HStack {
+            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundStyle(granted ? .green : .orange).font(.title2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(granted ? "Granted" : "Not granted")
+                    .font(.caption).foregroundStyle(granted ? .green : .orange)
+                Button("Open Settings", action: open).font(.caption)
+            }
+        }
+        .padding(14)
+        .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     // MARK: About
 
     private var aboutTab: some View {
@@ -179,13 +244,13 @@ struct SettingsRoot: View {
 final class SettingsWindowController {
     private var window: NSWindow?
 
-    func show(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String]) {
+    func show(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String], permissions: PermissionsManager) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let root = SettingsRoot(settings: settings, modes: modes, installedModels: installedModels)
+        let root = SettingsRoot(settings: settings, modes: modes, installedModels: installedModels, permissions: permissions)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 440),
                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "OpenCluely Settings"

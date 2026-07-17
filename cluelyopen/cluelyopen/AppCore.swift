@@ -118,7 +118,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
     @objc private func openSettings() {
         Task { @MainActor in
             let installed = await ModelList.installed()
-            settingsWindow.show(settings: settings, modes: modes, installedModels: installed)
+            settingsWindow.show(settings: settings, modes: modes, installedModels: installed, permissions: permissions)
         }
     }
 
