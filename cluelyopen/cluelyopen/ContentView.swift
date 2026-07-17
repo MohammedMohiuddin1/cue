@@ -182,9 +182,18 @@ struct OverlayBarView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 260)
-                .onChange(of: model.sessionItems.count) { proxy.scrollTo("bottom") }
-                .onChange(of: model.answer) { proxy.scrollTo("bottom") }
-                .onChange(of: model.liveTranscript) { proxy.scrollTo("bottom") }
+                // Throttle auto-scroll: only when the number of items changes or
+                // the streaming text grows by a chunk — not on every token (which
+                // triggers "update multiple times per frame").
+                .onChange(of: model.sessionItems.count) {
+                    withAnimation(.none) { proxy.scrollTo("bottom") }
+                }
+                .onChange(of: model.answer.count / 40) {
+                    withAnimation(.none) { proxy.scrollTo("bottom") }
+                }
+                .onChange(of: model.liveTranscript.count / 40) {
+                    withAnimation(.none) { proxy.scrollTo("bottom") }
+                }
             }
         }
     }
