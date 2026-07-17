@@ -35,6 +35,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
     // Read Screen (OCR) wiring.
     private let screenReader = ScreenReader()
 
+    // Settings window.
+    private let settingsWindow = SettingsWindowController()
+
     /// Build the whisper transcriber from the bundled model, or fall back to the
     /// stub if the model resource is missing (keeps the app usable either way).
     /// Transcribed phrases arrive via the onText callback (worker-driven).
@@ -88,12 +91,20 @@ final class AppCore: NSObject, NSApplicationDelegate {
         item.button?.title = "OC"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Toggle Overlay", action: #selector(toggleOverlay), keyEquivalent: "\\"))
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit OpenCluely",
                                 action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
+    }
+
+    @objc private func openSettings() {
+        Task { @MainActor in
+            let installed = await ModelList.installed()
+            settingsWindow.show(settings: settings, modes: modes, installedModels: installed)
+        }
     }
 
     // MARK: - Overlay
@@ -107,7 +118,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onReadScreen: { [weak self] in self?.readScreen() },
             onScreenshot: { [weak self] in self?.captureScreenshot() },
             onSelectModel: { [weak self] name in self?.selectModel(name) },
-            onEndSession: { [weak self] in self?.endSession() }
+            onEndSession: { [weak self] in self?.endSession() },
+            onOpenSettings: { [weak self] in self?.openSettings() }
         )
         let host = NSHostingView(rootView: view)
         // Let the hosting view drive the window size so the answer area can grow.

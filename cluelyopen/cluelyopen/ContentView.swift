@@ -117,6 +117,7 @@ struct OverlayBarView: View {
     var onScreenshot: () -> Void
     var onSelectModel: (String) -> Void
     var onEndSession: () -> Void
+    var onOpenSettings: () -> Void
     @State private var openedSession: ArchivedSession?
 
     var body: some View {
@@ -342,6 +343,10 @@ struct OverlayBarView: View {
             iconButton(model.collapsed ? "chevron.up" : "chevron.down", active: false, activeColor: .primary,
                        tip: model.collapsed ? "Expand conversation" : "Collapse conversation",
                        action: { model.collapsed.toggle() })
+
+            // Settings.
+            iconButton("slider.horizontal.3", active: false, activeColor: .primary,
+                       tip: "Settings — models & modes", action: onOpenSettings)
 
             Spacer()
 
