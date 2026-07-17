@@ -56,8 +56,7 @@ struct SettingsRoot: View {
             permissionsTab.tabItem { Label("Permissions", systemImage: "lock.shield") }
             aboutTab.tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 580, height: 460)
-        .padding()
+        .frame(minWidth: 620, idealWidth: 640, minHeight: 480, idealHeight: 500)
         .onReceive(ticker) { _ in
             hasScreen = permissions.hasScreenRecording
             hasAccess = permissions.hasAccessibility
@@ -90,7 +89,7 @@ struct SettingsRoot: View {
                 }
                 Text(provider == .ollama
                      ? "Runs 100% locally via Ollama. No key, no cloud, fully private."
-                     : "Cloud provider — your API key is sent directly to \(provider.displayName), never through any OpenCluely server.")
+                     : "Cloud provider — your API key is sent directly to \(provider.displayName), never through any Cue server.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -241,7 +240,7 @@ struct SettingsRoot: View {
     private var permissionsTab: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Permissions").font(.title3).bold()
-            Text("OpenCluely uses these macOS permissions. Everything runs locally — these only gate OS capabilities.")
+            Text("Cue uses these macOS permissions. Everything runs locally — these only gate OS capabilities.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -258,7 +257,7 @@ struct SettingsRoot: View {
                 open: { permissions.openAccessibilitySettings() }
             )
 
-            Text("If you just enabled a permission, you may need to quit and relaunch OpenCluely for it to take effect.")
+            Text("If you just enabled a permission, you may need to quit and relaunch Cue for it to take effect.")
                 .font(.caption2).foregroundStyle(.secondary)
             Spacer()
         }
@@ -289,7 +288,7 @@ struct SettingsRoot: View {
 
     private var aboutTab: some View {
         VStack(spacing: 10) {
-            Text("OpenCluely").font(.largeTitle).bold()
+            Text("Cue").font(.largeTitle).bold()
             Text("Free, open-source, 100% local interview assistant.")
                 .foregroundStyle(.secondary)
             Text("All inference runs on your Mac via Ollama + whisper.cpp. No accounts, no cloud, no keys.")
@@ -317,11 +316,15 @@ final class SettingsWindowController {
         }
         let root = SettingsRoot(settings: settings, modes: modes, installedModels: installedModels,
                                 permissions: permissions, onProviderChanged: onProviderChanged)
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 440),
-                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = "OpenCluely Settings"
+        // Let the hosting controller size the window to the SwiftUI content so
+        // the window and the TabView agree on dimensions (otherwise the tab bar
+        // overflows into the "Navigation Tab Bar" menu and the window mis-sizes).
+        let controller = NSHostingController(rootView: root)
+        let w = NSWindow(contentViewController: controller)
+        w.styleMask = [.titled, .closable]
+        w.title = "Cue Settings"
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: root)
+        w.setContentSize(NSSize(width: 640, height: 500))
         w.center()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

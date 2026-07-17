@@ -13,3 +13,9 @@ ggml-*.bin
 *.bin
 *.mlmodelc
 coreml-*.zip
+
+# Coverage artifacts from running the binary directly
+*.profraw
+
+# Raw logo source (app icon PNGs are generated from it)
+logo test.png

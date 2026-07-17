@@ -44,6 +44,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private let permissions = PermissionsManager()
     private let onboarding = OnboardingWindowController()
 
+    // Launch splash.
+    private let splash = SplashWindowController()
+
     // Global hotkeys.
     private var hotkeys: HotkeyManager?
 
@@ -89,14 +92,31 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory) // menu-bar app, no dock icon
+        // Play the brand splash first, then bring up the app.
+        splash.show { [weak self] in
+            self?.beginSession()
+        }
+    }
+
+    /// Runs after the splash fades: menu bar, hotkeys, then either the first-run
+    /// tour (before showing the bar) or the overlay directly.
+    private func beginSession() {
         setupStatusItem()
-        showOverlay()
         startHotkeys()
-        // First-run onboarding (permissions + tour).
+
         if onboarding.shouldShow {
-            onboarding.show(permissions: permissions) { [weak self] in
-                self?.overlay?.orderFrontRegardless()
+            // Show the wizard first; reveal the overlay only once it's dismissed.
+            // A brief delay lets the just-closed splash window release the
+            // activation state so the onboarding window reliably comes to front.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self else { return }
+                self.onboarding.show(permissions: self.permissions) { [weak self] in
+                    self?.showOverlay()
+                    self?.overlay?.orderFrontRegardless()
+                }
             }
+        } else {
+            showOverlay()
         }
     }
 
@@ -104,13 +124,17 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "OC"
+        // Aperture-eye mark, template-rendered so it adapts to light/dark menu bars.
+        let symbol = NSImage(systemSymbolName: "eye", accessibilityDescription: "Cue")
+        symbol?.isTemplate = true
+        item.button?.image = symbol
+        item.button?.toolTip = "Cue"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Toggle Overlay", action: #selector(toggleOverlay), keyEquivalent: "\\"))
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Setup Guide…", action: #selector(showOnboarding), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit OpenCluely",
+        menu.addItem(NSMenuItem(title: "Quit Cue",
                                 action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q"))
         item.menu = menu

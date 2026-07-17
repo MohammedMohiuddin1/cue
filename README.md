@@ -1,10 +1,10 @@
-# OpenCluely
+# Cue
 
 A **free, open-source, 100% local** macOS assistant for technical interviews — DSA, online assessments, competitive programming, **and** behavioral/resume questions. Invisible overlay, live meeting-audio transcription, screen reading, screenshots, and AI answers — all running on your own Mac.
 
 No accounts. No subscriptions. Your choice of a fully-local model or your own cloud API key.
 
-> **Honest note on "invisible":** OpenCluely hides its overlay from *default* Zoom/Meet/Teams screen-share using `NSWindow.sharingType = .none` — the same public API Cluely uses. It does **not** hide from ScreenCaptureKit-based recorders (OBS, QuickTime) on macOS 15+, and no public macOS API can. See the [invisibility limits](#invisibility--honest-limits) below.
+> **Honest note on "invisible":** Cue hides its overlay from *default* Zoom/Meet/Teams screen-share using `NSWindow.sharingType = .none` — the same public API Cluely uses. It does **not** hide from ScreenCaptureKit-based recorders (OBS, QuickTime) on macOS 15+, and no public macOS API can. See the [invisibility limits](#invisibility--honest-limits) below.
 
 ---
 
@@ -44,7 +44,7 @@ cd cluelyopen
 open cluelyopen/cluelyopen.xcodeproj
 ```
 
-The Xcode project depends on the local `OpenCluelyCore` Swift package (already wired) and the `SwiftWhisper` package (resolved on first build — the first build compiles whisper.cpp and takes a couple of minutes).
+The Xcode project depends on the local `OpenCluelyCore` Swift package (the core logic module, already wired) and the `SwiftWhisper` package (resolved on first build — the first build compiles whisper.cpp and takes a couple of minutes).
 
 ### 2. Whisper models (for the Listen feature)
 
@@ -73,7 +73,7 @@ ollama pull qwen2.5-coder:7b   # best coding model that fits a 16GB Mac
 ollama pull llava              # optional: vision model for screenshots
 ```
 
-**Option B — Cloud (BYOK, no download):** in the app, open **Settings → Provider**, pick OpenAI / Anthropic / Gemini, and paste your API key. Your key is sent directly to that provider — never through any server.
+**Option B — Cloud (BYOK, no download):** in the app, open **Settings → Provider**, pick OpenAI / Anthropic / Gemini, and paste your API key. Your key is sent directly to that provider — never through any Cue server.
 
 ### 4. Build & run
 
@@ -112,7 +112,7 @@ The app is **not sandboxed** (macOS forbids sandboxed apps from capturing other 
 ## Privacy
 
 - **Local mode:** everything runs on your Mac. Transcription (whisper.cpp) and OCR (Apple Vision) are on-device; the only network call is to Ollama on `127.0.0.1`.
-- **Cloud mode:** your prompts and API key go directly to the provider you chose. No OpenCluely server is involved in any mode.
+- **Cloud mode:** your prompts and API key go directly to the provider you chose. No Cue server is involved in any mode.
 - Your resume/materials and API keys live in local app storage, not in this repository.
 
 ---
