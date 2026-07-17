@@ -60,6 +60,14 @@ public final class Settings {
         }
     }
 
+    /// Persistent reference material (resume, project notes) that is always
+    /// prepended as context to every answer, so the model knows the user's
+    /// background for resume/project questions. Empty by default.
+    public var referenceMaterials: String {
+        get { store.string(forKey: "referenceMaterials") ?? "" }
+        set { store.setString(newValue, forKey: "referenceMaterials") }
+    }
+
     // NOTE: These are the "best free model" recommendations by RAM tier. They
     // are only DEFAULTS — the Settings window lets the user pick any pulled
     // model, and the stored choice overrides these. `qwen3-coder` (~19GB) is the

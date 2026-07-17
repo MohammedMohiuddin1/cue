@@ -31,12 +31,22 @@ public final class AnswerEngine {
             contextText = nil; images = [d]; model = settings.visionModel
         }
         let prompt = PromptBuilder.build(mode: mode, userText: userText, contextText: contextText)
+
+        // Always prepend the user's persistent reference materials (resume,
+        // project notes) so the model can answer resume/project questions.
+        var system = prompt.system
+        let materials = settings.referenceMaterials.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !materials.isEmpty {
+            system = "Reference material about the user (their resume / projects). "
+                   + "Use it when relevant:\n\(materials)\n\n" + system
+        }
         let client = self.client
+        let finalSystem = system
 
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let stream = try await client.chat(system: prompt.system, user: prompt.user, model: model, images: images)
+                    let stream = try await client.chat(system: finalSystem, user: prompt.user, model: model, images: images)
                     for try await tok in stream { continuation.yield(tok) }
                     continuation.finish()
                 } catch {

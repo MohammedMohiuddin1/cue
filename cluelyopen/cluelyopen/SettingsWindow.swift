@@ -18,6 +18,7 @@ struct SettingsRoot: View {
     @State private var visionModel: String
     @State private var whisperModel: String
     @State private var activeModeID: String
+    @State private var materials: String
 
     init(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String]) {
         self.settings = settings
@@ -27,6 +28,7 @@ struct SettingsRoot: View {
         _visionModel = State(initialValue: settings.visionModel)
         _whisperModel = State(initialValue: settings.whisperModel)
         _activeModeID = State(initialValue: modes.activeMode.id)
+        _materials = State(initialValue: settings.referenceMaterials)
     }
 
     private let whisperOptions = ["base.en", "small.en", "medium.en"]
@@ -35,9 +37,10 @@ struct SettingsRoot: View {
         TabView {
             generalTab.tabItem { Label("General", systemImage: "gearshape") }
             modesTab.tabItem { Label("Modes", systemImage: "person.crop.rectangle.stack") }
+            materialsTab.tabItem { Label("Materials", systemImage: "doc.text") }
             aboutTab.tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 560, height: 440)
+        .frame(width: 580, height: 460)
         .padding()
     }
 
@@ -112,6 +115,45 @@ struct SettingsRoot: View {
             .padding()
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+    }
+
+    // MARK: Materials (resume / reference docs, always in context)
+
+    private var materialsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Reference Materials").font(.title3).bold()
+            Text("Your resume, project notes, or any reference text. This is always given to the model as context, so it can answer resume/project/behavioral questions — not just DSA.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button {
+                    if let file = FileImport.pickFile(), case .text(let t, let name) = file {
+                        let header = "\n\n--- \(name) ---\n"
+                        materials += (materials.isEmpty ? "" : header) + t
+                        settings.referenceMaterials = materials
+                    }
+                } label: {
+                    Label("Add file (PDF / text)", systemImage: "plus.circle")
+                }
+                Spacer()
+                Button("Clear") {
+                    materials = ""
+                    settings.referenceMaterials = ""
+                }.foregroundStyle(.red)
+                Text("\(materials.count) chars").font(.caption).foregroundStyle(.secondary)
+            }
+
+            TextEditor(text: $materials)
+                .font(.system(.callout, design: .monospaced))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(0.3)))
+                .onChange(of: materials) { settings.referenceMaterials = $1 }
+
+            Text("Tip: keep it concise — very long materials use more tokens and slow answers.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(4)
     }
 
     // MARK: About

@@ -64,6 +64,22 @@ private func makeEngine(_ fake: FakeLLM) -> AnswerEngine {
     #expect(fake.lastSystem.contains("DSA"))
 }
 
+@Test func referenceMaterialsIncludedInSystemPrompt() async throws {
+    let fake = FakeLLM()
+    let store = InMemoryStore()
+    let settings = Settings(store: store, tier: .high)
+    settings.referenceMaterials = "RESUME: Built a distributed cache at Acme."
+    let engine = AnswerEngine(client: fake, modes: ModesManager(store: store), settings: settings)
+    for try await _ in engine.answer(userText: "tell me about your projects", context: .none) {}
+    #expect(fake.lastSystem.contains("distributed cache at Acme"))
+}
+
+@Test func emptyReferenceMaterialsNotInjected() async throws {
+    let fake = FakeLLM()
+    for try await _ in makeEngine(fake).answer(userText: "q", context: .none) {}
+    #expect(!fake.lastSystem.contains("Reference material"))
+}
+
 @Test func errorsPropagate() async {
     let fake = FakeLLM()
     fake.errorToThrow = LLMError.notRunning
