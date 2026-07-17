@@ -117,6 +117,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onToggleInvisible: { [weak self] in self?.toggleInvisible() },
             onReadScreen: { [weak self] in self?.readScreen() },
             onScreenshot: { [weak self] in self?.captureScreenshot() },
+            onUploadFile: { [weak self] in self?.uploadFile() },
             onSelectModel: { [weak self] name in self?.selectModel(name) },
             onEndSession: { [weak self] in self?.endSession() },
             onOpenSettings: { [weak self] in self?.openSettings() }
@@ -273,6 +274,42 @@ final class AppCore: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - File upload (→ context)
+
+    private func uploadFile() {
+        guard let file = FileImport.pickFile() else { return }
+        model.startSessionIfNeeded()
+        switch file {
+        case .image(let data, let name):
+            // Ensure a vision model, like the screenshot path.
+            Task { @MainActor in
+                let installed = await ModelList.installed()
+                let vision = installed.first { n in
+                    ["llava", "vl", "vision", "moondream", "bakllava", "minicpm"].contains {
+                        n.lowercased().contains($0)
+                    }
+                }
+                if let vision, !installed.contains(settings.visionModel) { settings.visionModel = vision }
+                guard installed.contains(settings.visionModel) || vision != nil else {
+                    model.status = "No vision model for images. In Terminal: ollama pull llava"
+                    return
+                }
+                ask("Answer or solve the problem in this image.", context: .image(data),
+                    label: "File: \(name)")
+            }
+        case .text(let text, let name):
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                model.status = "No readable text in \(name)."
+                return
+            }
+            // Cap very large files so we don't overflow the prompt.
+            let capped = String(trimmed.prefix(8000))
+            ask("Use this file as context and answer the current question or summarize it.",
+                context: .text(capped), label: "File: \(name)")
+        }
+    }
+
     // MARK: - Ask
 
     /// When listening, use the recent transcript as context; otherwise ask plainly.
@@ -283,19 +320,23 @@ final class AppCore: NSObject, NSApplicationDelegate {
         ask(q, context: context)
     }
 
-    private func ask(_ q: String, context: AnswerContext) {
+    private func ask(_ q: String, context: AnswerContext, label: String? = nil) {
         model.startSessionIfNeeded()
         model.query = q
         model.answer = ""
         model.status = "Thinking…"
         model.collapsed = false
         model.showHistory = false
-        // Label describing where the context came from (like Cluely's "Viewed screen").
-        switch context {
-        case .text where isListening: model.contextLabel = "From meeting audio"
-        case .text: model.contextLabel = "Viewed screen"
-        case .image: model.contextLabel = "From screenshot"
-        case .none: model.contextLabel = ""
+        // Explicit label wins (e.g. "File: resume.pdf"); otherwise infer from source.
+        if let label {
+            model.contextLabel = label
+        } else {
+            switch context {
+            case .text where isListening: model.contextLabel = "From meeting audio"
+            case .text: model.contextLabel = "Viewed screen"
+            case .image: model.contextLabel = "From screenshot"
+            case .none: model.contextLabel = ""
+            }
         }
         NSLog("OpenCluely ask: q=\"%@\" model=%@", q, settings.textModel)
         Task { @MainActor in

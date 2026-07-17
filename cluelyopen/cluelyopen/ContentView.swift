@@ -115,6 +115,7 @@ struct OverlayBarView: View {
     var onToggleInvisible: () -> Void
     var onReadScreen: () -> Void
     var onScreenshot: () -> Void
+    var onUploadFile: () -> Void
     var onSelectModel: (String) -> Void
     var onEndSession: () -> Void
     var onOpenSettings: () -> Void
@@ -312,6 +313,10 @@ struct OverlayBarView: View {
 
     private var toolbarRow: some View {
         HStack(spacing: 18) {
+            // Upload a file (image/PDF/text) as context.
+            iconButton("paperclip", active: false, activeColor: .primary,
+                       tip: "Upload a file (image, PDF, or text) as context", action: onUploadFile)
+
             // Screenshot a region → vision model.
             iconButton("camera.viewfinder", active: false, activeColor: .primary,
                        tip: "Screenshot a region and solve it", action: onScreenshot)
