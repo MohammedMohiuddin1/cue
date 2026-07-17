@@ -24,6 +24,7 @@ No accounts. No subscriptions. Your choice of a fully-local model or your own cl
 - **Coding Modes** — General / Coding Interview / System Design / DSA personas.
 - **Sessions + History** — a continuous scrollable log per session; past sessions are browsable.
 - **Invisibility toggle** — hide the overlay from screen-share on demand.
+- **Resizable overlay** — drag the bar to any size; it remembers it across launches.
 - **Global hotkeys** — control it hands-free (see below).
 - **Local or cloud** — run fully offline via Ollama, or bring your own OpenAI / Anthropic / Gemini key.
 
@@ -50,7 +51,8 @@ Add your PNGs to assets/ with these names, then uncomment this section:
 
 ## Requirements
 
-- macOS 14+ (Apple Silicon recommended)
+- macOS 26.5+ (Apple Silicon recommended) — this is the project's deployment
+  target; lower it in the Xcode build settings if you need to run on an older macOS
 - **Xcode** to build
 - For local inference: [Ollama](https://ollama.com)
 - For cloud inference: an OpenAI, Anthropic, or Google Gemini API key
@@ -101,6 +103,34 @@ ollama pull llava              # optional: vision model for screenshots
 ### 4. Build & run
 
 Press **▶ Run** in Xcode. The first launch shows an onboarding wizard for permissions.
+
+---
+
+## Project structure
+
+```
+OpenCluelyCore/          Swift package — pure logic, no UI, unit-tested (40 tests)
+  Sources/               Settings, Modes, PromptBuilder, AnswerEngine, LLM clients
+  Tests/                 swift test
+cluelyopen/              Xcode app target — macOS/AppKit/SwiftUI shell
+  cluelyopen/            Overlay bar, splash, onboarding, settings, capture, hotkeys
+assets/                  README artwork
+```
+
+The app is a menu-bar agent with no dock icon or main window — `AppCore.swift` sets
+`NSApp.setActivationPolicy(.accessory)` at launch, and the UI is a floating
+`NSPanel` overlay.
+
+> **A note on names:** the app is **Cue**, but the Xcode target, bundle ID
+> (`abhinav.cluelyopen`), and core package (`OpenCluelyCore`) still use the
+> original project name. These are internal identifiers users never see;
+> renaming them would break signing and imports for no benefit.
+
+Run the core test suite with:
+
+```bash
+cd OpenCluelyCore && swift test
+```
 
 ---
 

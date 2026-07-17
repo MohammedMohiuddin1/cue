@@ -1,21 +1,31 @@
-.build/
+# macOS
 .DS_Store
 **/.DS_Store
-.superpowers/
-docs/
-OpenCluelyCore/.build/
 
-# Xcode — track the .xcodeproj, but ignore per-user cruft inside it
+# Swift Package Manager
+.build/
+**/.build/
+.swiftpm/
+**/.swiftpm/
+
+# Xcode — the .xcodeproj is tracked, but per-user state inside it is not
 xcuserdata/
 **/xcuserdata/
 DerivedData/
+
+# Whisper models — large binaries, downloaded by the user (see README)
 ggml-*.bin
 *.bin
-*.mlmodelc
+*.mlmodelc/
+**/*.mlmodelc/
 coreml-*.zip
 
 # Coverage artifacts from running the binary directly
 *.profraw
 
-# Raw logo source (app icon PNGs are generated from it)
+# Raw logo source — the AppIcon PNGs in Assets.xcassets are generated from it
 logo test.png
+
+# Local working notes, not part of the project
+docs/
+.superpowers/
