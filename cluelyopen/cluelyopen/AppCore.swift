@@ -15,16 +15,18 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private var overlay: OverlayBarWindow?
     private let model = AnswerModel()
 
-    // Core engine wiring (all local, no network except Ollama on localhost).
+    // Core engine wiring. The client is chosen by the active provider (local
+    // Ollama by default; BYOK cloud otherwise) and rebuilt when it changes.
     private lazy var settings = Settings(store: UserDefaults.standard, tier: RAMTier.detected())
     private lazy var modes = ModesManager(store: UserDefaults.standard)
-    // Use 127.0.0.1 (not "localhost") so macOS doesn't resolve to IPv6 ::1,
-    // where Ollama isn't listening (connection refused).
-    private lazy var engine = AnswerEngine(
-        client: OllamaClient(baseURL: URL(string: "http://127.0.0.1:11434")!),
-        modes: modes,
-        settings: settings
-    )
+    private lazy var engine = makeEngine()
+
+    private func makeEngine() -> AnswerEngine {
+        AnswerEngine(client: LLMClientFactory.make(for: settings), modes: modes, settings: settings)
+    }
+
+    /// Rebuild the engine with the current provider (call after changing provider/key/model).
+    private func rebuildEngine() { engine = makeEngine() }
 
     // Listen (audio → transcript) wiring.
     private let transcript = TranscriptBuffer(maxChars: 4000)
@@ -118,7 +120,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
     @objc private func openSettings() {
         Task { @MainActor in
             let installed = await ModelList.installed()
-            settingsWindow.show(settings: settings, modes: modes, installedModels: installed, permissions: permissions)
+            settingsWindow.show(settings: settings, modes: modes, installedModels: installed,
+                                permissions: permissions,
+                                onProviderChanged: { [weak self] in self?.rebuildEngine() })
         }
     }
 

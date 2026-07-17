@@ -15,33 +15,41 @@ struct SettingsRoot: View {
     let modes: ModesManager
     let installedModels: [String]
     let permissions: PermissionsManager
+    var onProviderChanged: () -> Void = {}
 
     @State private var textModel: String
     @State private var visionModel: String
     @State private var whisperModel: String
     @State private var activeModeID: String
     @State private var materials: String
+    @State private var provider: Provider
+    @State private var apiKey: String
 
     @State private var hasScreen = false
     @State private var hasAccess = false
     private let ticker = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
 
-    init(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String], permissions: PermissionsManager) {
+    init(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String],
+         permissions: PermissionsManager, onProviderChanged: @escaping () -> Void = {}) {
         self.settings = settings
         self.modes = modes
         self.installedModels = installedModels
         self.permissions = permissions
+        self.onProviderChanged = onProviderChanged
         _textModel = State(initialValue: settings.textModel)
         _visionModel = State(initialValue: settings.visionModel)
         _whisperModel = State(initialValue: settings.whisperModel)
         _activeModeID = State(initialValue: modes.activeMode.id)
         _materials = State(initialValue: settings.referenceMaterials)
+        _provider = State(initialValue: settings.provider)
+        _apiKey = State(initialValue: settings.apiKey(for: settings.provider))
     }
 
     private let whisperOptions = ["base.en", "small.en", "medium.en"]
 
     var body: some View {
         TabView {
+            providerTab.tabItem { Label("Provider", systemImage: "cloud") }
             generalTab.tabItem { Label("General", systemImage: "gearshape") }
             modesTab.tabItem { Label("Modes", systemImage: "person.crop.rectangle.stack") }
             materialsTab.tabItem { Label("Materials", systemImage: "doc.text") }
@@ -57,6 +65,62 @@ struct SettingsRoot: View {
         .onAppear {
             hasScreen = permissions.hasScreenRecording
             hasAccess = permissions.hasAccessibility
+        }
+    }
+
+    // MARK: Provider (local vs BYOK cloud)
+
+    private var providerTab: some View {
+        Form {
+            Section("Inference provider") {
+                Picker("Provider", selection: $provider) {
+                    ForEach(Provider.allCases, id: \.self) { p in
+                        Text(p.displayName).tag(p)
+                    }
+                }
+                .onChange(of: provider) { _, new in
+                    settings.provider = new
+                    // Load this provider's saved key + sensible default models.
+                    apiKey = settings.apiKey(for: new)
+                    if !installedModels.contains(textModel) || new != .ollama {
+                        textModel = new.defaultTextModel; settings.textModel = textModel
+                        visionModel = new.defaultVisionModel; settings.visionModel = visionModel
+                    }
+                    onProviderChanged()
+                }
+                Text(provider == .ollama
+                     ? "Runs 100% locally via Ollama. No key, no cloud, fully private."
+                     : "Cloud provider — your API key is sent directly to \(provider.displayName), never through any OpenCluely server.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            if provider.needsAPIKey {
+                Section("\(provider.displayName) API key") {
+                    SecureField("Paste your API key", text: $apiKey)
+                        .onChange(of: apiKey) { _, new in
+                            settings.setAPIKey(new, for: provider)
+                            onProviderChanged()
+                        }
+                    Text(keyHint)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Models") {
+                    TextField("Text model", text: $textModel)
+                        .onChange(of: textModel) { settings.textModel = $1 }
+                    TextField("Vision model", text: $visionModel)
+                        .onChange(of: visionModel) { settings.visionModel = $1 }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var keyHint: String {
+        switch provider {
+        case .openai: return "Get one at platform.openai.com/api-keys"
+        case .anthropic: return "Get one at console.anthropic.com"
+        case .gemini: return "Get one at aistudio.google.com/apikey"
+        case .ollama: return ""
         }
     }
 
@@ -244,13 +308,15 @@ struct SettingsRoot: View {
 final class SettingsWindowController {
     private var window: NSWindow?
 
-    func show(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String], permissions: PermissionsManager) {
+    func show(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String],
+              permissions: PermissionsManager, onProviderChanged: @escaping () -> Void = {}) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let root = SettingsRoot(settings: settings, modes: modes, installedModels: installedModels, permissions: permissions)
+        let root = SettingsRoot(settings: settings, modes: modes, installedModels: installedModels,
+                                permissions: permissions, onProviderChanged: onProviderChanged)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 440),
                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "OpenCluely Settings"

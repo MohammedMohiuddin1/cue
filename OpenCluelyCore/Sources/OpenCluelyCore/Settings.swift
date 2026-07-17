@@ -68,6 +68,21 @@ public final class Settings {
         set { store.setString(newValue, forKey: "referenceMaterials") }
     }
 
+    /// The inference provider (local Ollama by default; cloud providers BYOK).
+    public var provider: Provider {
+        get { Provider(rawValue: store.string(forKey: "provider") ?? "") ?? .ollama }
+        set { store.setString(newValue.rawValue, forKey: "provider") }
+    }
+
+    /// The API key for a given cloud provider (empty for Ollama). Stored per
+    /// provider so switching providers keeps each key.
+    public func apiKey(for provider: Provider) -> String {
+        store.string(forKey: "apiKey.\(provider.rawValue)") ?? ""
+    }
+    public func setAPIKey(_ key: String, for provider: Provider) {
+        store.setString(key, forKey: "apiKey.\(provider.rawValue)")
+    }
+
     // NOTE: These are the "best free model" recommendations by RAM tier. They
     // are only DEFAULTS — the Settings window lets the user pick any pulled
     // model, and the stored choice overrides these. `qwen3-coder` (~19GB) is the
