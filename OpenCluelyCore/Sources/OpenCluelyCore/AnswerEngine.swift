@@ -35,6 +35,13 @@ public final class AnswerEngine {
         // Always prepend the user's persistent reference materials (resume,
         // project notes) so the model can answer resume/project questions.
         var system = prompt.system
+
+        // Adapt the answer style to the question type so behavioral/resume
+        // questions get a conversational answer even in a coding-focused Mode.
+        if case .image = context {} else {
+            system += "\n\n" + QuestionKind.classify(userText).styleDirective
+        }
+
         let materials = settings.referenceMaterials.trimmingCharacters(in: .whitespacesAndNewlines)
         if !materials.isEmpty {
             system = "Reference material about the user (their resume / projects). "
