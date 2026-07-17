@@ -22,10 +22,14 @@ final class HotkeyManager {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
+    // Double-tap ⌘ detection.
+    private var lastCommandTap: TimeInterval = 0
+    private let doubleTapWindow: TimeInterval = 0.35
+
     init(handlers: Handlers) { self.handlers = handlers }
 
     func start() {
-        let mask = (1 << CGEventType.keyDown.rawValue)
+        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
 
         // `passRetained(self)` bridges self into the C callback via `userInfo`.
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -71,7 +75,29 @@ final class HotkeyManager {
             if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
         }
+
+        // Double-tap ⌘ → toggle overlay. `.flagsChanged` fires on modifier
+        // press/release; we detect the Command key being pressed twice quickly.
+        if type == .flagsChanged {
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            // 55 = left Command, 54 = right Command.
+            let isCommandKey = (keyCode == 55 || keyCode == 54)
+            let commandNowDown = event.flags.contains(.maskCommand)
+            if isCommandKey && commandNowDown {
+                let now = Date().timeIntervalSinceReferenceDate
+                if now - lastCommandTap < doubleTapWindow {
+                    lastCommandTap = 0
+                    DispatchQueue.main.async { self.handlers.toggleOverlay() }
+                } else {
+                    lastCommandTap = now
+                }
+            }
+            return false   // never consume modifier events
+        }
+
         guard type == .keyDown else { return false }
+        // Any non-modifier keypress resets the double-tap tracker.
+        lastCommandTap = 0
 
         let flags = event.flags
         let cmd = flags.contains(.maskCommand)
