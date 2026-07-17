@@ -182,12 +182,14 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
     private func startHotkeys() {
         let h = HotkeyManager(handlers: .init(
-            toggleOverlay: { [weak self] in self?.toggleOverlay() },
-            answer: { [weak self] in self?.answerFromHotkey() },
-            move: { [weak self] dx, dy in self?.moveOverlay(dx: dx, dy: dy) }
+            toggleOverlay: { [weak self] in NSLog("OpenCluely hotkey: toggle"); self?.toggleOverlay() },
+            answer: { [weak self] in NSLog("OpenCluely hotkey: answer"); self?.answerFromHotkey() },
+            move: { [weak self] dx, dy in NSLog("OpenCluely hotkey: move"); self?.moveOverlay(dx: dx, dy: dy) }
         ))
         h.start()
         hotkeys = h
+        NSLog("OpenCluely hotkeys started. Accessibility granted = %@",
+              permissions.hasAccessibility ? "YES" : "NO (global shortcuts won't fire — grant it in System Settings)")
     }
 
     /// ⌘↩ from anywhere: answer using the current context (transcript if
