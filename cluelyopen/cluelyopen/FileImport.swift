@@ -20,18 +20,27 @@ enum FileImport {
     /// canceled / unsupported.
     @MainActor
     static func pickFile() -> ImportedFile? {
-        // Our overlay is a non-activating accessory app; the open panel needs the
-        // app to be active and frontmost or it won't appear/take focus.
-        NSApp.setActivationPolicy(.regular)
+        // Our overlay is a non-activating accessory app. If no ordinary window is
+        // already showing (i.e. called from the overlay), briefly become a regular
+        // app so the open panel can present and take focus. If a regular window is
+        // already up (e.g. the Settings window), DON'T toggle policy — that steals
+        // focus and breaks the panel; just activate.
+        let hasRegularWindow = NSApp.windows.contains {
+            $0.isVisible && $0.canBecomeMain && !($0 is NSPanel)
+        }
+        var didChangePolicy = false
+        if !hasRegularWindow {
+            NSApp.setActivationPolicy(.regular)
+            didChangePolicy = true
+        }
         NSApp.activate(ignoringOtherApps: true)
-        defer { NSApp.setActivationPolicy(.accessory) }
+        defer { if didChangePolicy { NSApp.setActivationPolicy(.accessory) } }
 
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.image, .pdf, .plainText, .sourceCode, .text, .data]
         panel.message = "Choose a file to use as context (image, PDF, or text)"
-        panel.level = .modalPanel
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return load(url)
     }
