@@ -38,6 +38,10 @@ final class AppCore: NSObject, NSApplicationDelegate {
     // Settings window.
     private let settingsWindow = SettingsWindowController()
 
+    // Onboarding.
+    private let permissions = PermissionsManager()
+    private let onboarding = OnboardingWindowController()
+
     /// Build the whisper transcriber from the bundled model, or fall back to the
     /// stub if the model resource is missing (keeps the app usable either way).
     /// Transcribed phrases arrive via the onText callback (worker-driven).
@@ -82,6 +86,12 @@ final class AppCore: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory) // menu-bar app, no dock icon
         setupStatusItem()
         showOverlay()
+        // First-run onboarding (permissions + tour).
+        if onboarding.shouldShow {
+            onboarding.show(permissions: permissions) { [weak self] in
+                self?.overlay?.orderFrontRegardless()
+            }
+        }
     }
 
     // MARK: - Menu bar
@@ -92,6 +102,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Toggle Overlay", action: #selector(toggleOverlay), keyEquivalent: "\\"))
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Setup Guide…", action: #selector(showOnboarding), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit OpenCluely",
                                 action: #selector(NSApplication.terminate(_:)),
@@ -104,6 +115,12 @@ final class AppCore: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             let installed = await ModelList.installed()
             settingsWindow.show(settings: settings, modes: modes, installedModels: installed)
+        }
+    }
+
+    @objc private func showOnboarding() {
+        onboarding.show(permissions: permissions) { [weak self] in
+            self?.overlay?.orderFrontRegardless()
         }
     }
 
