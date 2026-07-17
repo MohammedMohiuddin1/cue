@@ -42,6 +42,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private let permissions = PermissionsManager()
     private let onboarding = OnboardingWindowController()
 
+    // Global hotkeys.
+    private var hotkeys: HotkeyManager?
+
     /// Build the whisper transcriber from the bundled model, or fall back to the
     /// stub if the model resource is missing (keeps the app usable either way).
     /// Transcribed phrases arrive via the onText callback (worker-driven).
@@ -86,6 +89,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory) // menu-bar app, no dock icon
         setupStatusItem()
         showOverlay()
+        startHotkeys()
         // First-run onboarding (permissions + tour).
         if onboarding.shouldShow {
             onboarding.show(permissions: permissions) { [weak self] in
@@ -172,6 +176,38 @@ final class AppCore: NSObject, NSApplicationDelegate {
         settings.textModel = name
         model.currentModel = name
         model.status = "Model set to \(name)"
+    }
+
+    // MARK: - Global hotkeys
+
+    private func startHotkeys() {
+        let h = HotkeyManager(handlers: .init(
+            toggleOverlay: { [weak self] in self?.toggleOverlay() },
+            answer: { [weak self] in self?.answerFromHotkey() },
+            move: { [weak self] dx, dy in self?.moveOverlay(dx: dx, dy: dy) }
+        ))
+        h.start()
+        hotkeys = h
+    }
+
+    /// ⌘↩ from anywhere: answer using the current context (transcript if
+    /// listening, else the last query, else a generic prompt).
+    private func answerFromHotkey() {
+        if isListening && !transcript.recent.isEmpty {
+            ask("Answer the most recent question from the conversation.",
+                context: .text(transcript.recent))
+        } else if !model.query.isEmpty {
+            ask(model.query, context: .none)
+        }
+    }
+
+    private func moveOverlay(dx: CGFloat, dy: CGFloat) {
+        guard let overlay else { return }
+        var origin = overlay.frame.origin
+        origin.x += dx
+        origin.y += dy
+        overlay.setFrameOrigin(origin)
+        settings.overlayOrigin = origin
     }
 
     @objc private func toggleOverlay() {
