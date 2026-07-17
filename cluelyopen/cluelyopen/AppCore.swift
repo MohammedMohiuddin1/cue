@@ -250,25 +250,25 @@ final class AppCore: NSObject, NSApplicationDelegate {
             // Ensure a vision-capable model is available; pick one if the default
             // isn't installed, else guide the user to pull one.
             let installed = await ModelList.installed()
-            let visionCandidates = installed.filter { name in
+            // Show the crosshair FIRST so capture always feels responsive.
+            model.status = "Select a region…"
+            guard let png = await ScreenshotCapture.captureRegion() else {
+                model.status = "Screenshot canceled."
+                return
+            }
+            // Then ensure a vision model exists (auto-pick installed one, else guide).
+            let vision = installed.first { name in
                 ["llava", "vl", "vision", "moondream", "bakllava", "minicpm"].contains {
                     name.lowercased().contains($0)
                 }
             }
             if !installed.contains(settings.visionModel) {
-                if let v = visionCandidates.first {
-                    settings.visionModel = v
-                } else {
+                if let vision { settings.visionModel = vision }
+                else {
                     model.startSessionIfNeeded()
-                    model.status = "No vision model found. In Terminal: ollama pull llava"
+                    model.status = "Captured — but no vision model. In Terminal: ollama pull llava"
                     return
                 }
-            }
-
-            model.status = "Select a region…"
-            guard let png = await ScreenshotCapture.captureRegion() else {
-                model.status = "Screenshot canceled."
-                return
             }
             ask("Solve or answer the problem shown in this image.", context: .image(png))
         }
