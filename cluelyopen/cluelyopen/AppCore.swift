@@ -172,12 +172,15 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onOpenSettings: { [weak self] in self?.openSettings() }
         )
         let host = NSHostingView(rootView: view)
-        // Let the hosting view drive the window size so the answer area can grow.
-        host.sizingOptions = [.preferredContentSize]
+        // No `.preferredContentSize` here: the user's dragged window size is the
+        // source of truth, and the SwiftUI view fills whatever size it's given.
         host.translatesAutoresizingMaskIntoConstraints = true
+        host.autoresizingMask = [.width, .height]
         let panel = OverlayBarWindow(content: host)
-        panel.setContentSize(NSSize(width: 588, height: 120))
+        panel.setClampedContentSize(settings.overlaySize)
         panel.setFrameOrigin(settings.overlayOrigin)
+        // Persist whatever size the user drags the bar to.
+        panel.onResize = { [weak self] size in self?.settings.overlaySize = size }
         panel.orderFrontRegardless()
         overlay = panel
 

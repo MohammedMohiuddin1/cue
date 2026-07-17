@@ -60,6 +60,20 @@ public final class Settings {
         }
     }
 
+    /// The user's chosen overlay size (persisted across launches so a bar they
+    /// dragged larger stays that way). Defaults to the compact starting size.
+    public var overlaySize: CGSize {
+        get {
+            let w = store.double(forKey: "overlayW") ?? 620
+            let h = store.double(forKey: "overlayH") ?? 120
+            return CGSize(width: w, height: h)
+        }
+        set {
+            store.setDouble(Double(newValue.width), forKey: "overlayW")
+            store.setDouble(Double(newValue.height), forKey: "overlayH")
+        }
+    }
+
     /// Persistent reference material (resume, project notes) that is always
     /// prepended as context to every answer, so the model knows the user's
     /// background for resume/project questions. Empty by default.

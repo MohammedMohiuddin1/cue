@@ -139,7 +139,9 @@ struct OverlayBarView: View {
             RoundedRectangle(cornerRadius: 18)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
-        .frame(width: 620)
+        // Fill whatever size the window is dragged to; the conversation box
+        // absorbs the extra height and the input/toolbar rows stay pinned.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
     // MARK: - Conversation box (continuous session log)
@@ -183,7 +185,9 @@ struct OverlayBarView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 260)
+                // Grow with the window: the box takes whatever height the user
+                // has dragged, down to a readable minimum.
+                .frame(minHeight: 120, maxHeight: .infinity)
                 // Throttle auto-scroll: only when the number of items changes or
                 // the streaming text grows by a chunk — not on every token (which
                 // triggers "update multiple times per frame").
@@ -288,7 +292,7 @@ struct OverlayBarView: View {
                 }
             }
         }
-        .frame(height: 300)
+        .frame(minHeight: 140, maxHeight: .infinity)
     }
 
     // MARK: - Input row
