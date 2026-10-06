@@ -450,6 +450,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
             } catch LLMError.modelMissing(let m) {
                 NSLog("OpenCluely ask: LLMError.modelMissing(%@)", m)
                 model.status = "Model missing. In Terminal: ollama pull \(m)"
+            } catch LLMError.api(let provider, let code, let message) {
+                NSLog("OpenCluely ask: LLMError.api(%@, %d, %@)", provider, code, message)
+                model.status = "\(provider) error (HTTP \(code)): \(message)"
             } catch LLMError.http(let code) {
                 NSLog("OpenCluely ask: LLMError.http(%d)", code)
                 model.status = "Ollama error (HTTP \(code))."

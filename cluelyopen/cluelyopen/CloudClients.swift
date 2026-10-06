@@ -48,8 +48,7 @@ final class AnthropicClient: LLMClient {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let (data, response) = try await session.data(for: req)
-                    try Self.checkStatus(response, data: data)
+                    let data = try await send(req, via: session, provider: "Anthropic")
                     // Response: { "content": [ { "type":"text", "text":"..." } ] }
                     let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                     let blocks = obj?["content"] as? [[String: Any]] ?? []
@@ -61,12 +60,6 @@ final class AnthropicClient: LLMClient {
                 }
             }
         }
-    }
-
-    private static func checkStatus(_ response: URLResponse, data: Data) throws {
-        guard let http = response as? HTTPURLResponse else { return }
-        if http.statusCode == 401 { throw LLMError.http(401) }
-        if !(200...299).contains(http.statusCode) { throw LLMError.http(http.statusCode) }
     }
 }
 
@@ -114,10 +107,7 @@ final class OpenAIClient: LLMClient {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let (data, response) = try await session.data(for: req)
-                    if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                        throw LLMError.http(http.statusCode)
-                    }
+                    let data = try await send(req, via: session, provider: "OpenAI")
                     let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                     let choices = obj?["choices"] as? [[String: Any]] ?? []
                     let text = choices.compactMap {
@@ -164,10 +154,7 @@ final class GeminiClient: LLMClient {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let (data, response) = try await session.data(for: req)
-                    if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                        throw LLMError.http(http.statusCode)
-                    }
+                    let data = try await send(req, via: session, provider: "Gemini")
                     // candidates[0].content.parts[].text
                     let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
                     let candidates = obj?["candidates"] as? [[String: Any]] ?? []
@@ -182,6 +169,39 @@ final class GeminiClient: LLMClient {
             }
         }
     }
+}
+
+// MARK: - Shared request handling
+
+/// Sends a cloud request, retrying transient failures (rate limits, overloaded
+/// models) with a short backoff. A final non-2xx becomes `LLMError.api` carrying
+/// the provider's own error message so the overlay can show what went wrong.
+private func send(_ req: URLRequest, via session: URLSession, provider: String) async throws -> Data {
+    let retryable: Set<Int> = [429, 500, 502, 503, 504]
+    let backoffSeconds: [UInt64] = [1, 2]  // waits before the 2nd and 3rd attempts
+    var attempt = 0
+    while true {
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse,
+              !(200...299).contains(http.statusCode) else { return data }
+        if retryable.contains(http.statusCode), attempt < backoffSeconds.count {
+            NSLog("OpenCluely %@: HTTP %d, retrying", provider, http.statusCode)
+            try await Task.sleep(nanoseconds: backoffSeconds[attempt] * 1_000_000_000)
+            attempt += 1
+            continue
+        }
+        throw LLMError.api(provider: provider, status: http.statusCode,
+                           message: apiErrorMessage(from: data))
+    }
+}
+
+/// Anthropic, OpenAI and Gemini all return `{ "error": { "message": "..." } }`.
+private func apiErrorMessage(from data: Data) -> String {
+    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    if let message = (obj?["error"] as? [String: Any])?["message"] as? String {
+        return message
+    }
+    return String(decoding: data.prefix(200), as: UTF8.self)
 }
 
 // MARK: - Factory
