@@ -26,7 +26,7 @@ public enum Provider: String, CaseIterable, Sendable {
         case .ollama: return "qwen2.5-coder:7b"
         case .openai: return "gpt-5"
         case .anthropic: return "claude-opus-4-8"
-        case .gemini: return "gemini-2.5-flash"
+        case .gemini: return "gemini-flash-latest"
         }
     }
 
@@ -36,7 +36,7 @@ public enum Provider: String, CaseIterable, Sendable {
         case .ollama: return "llava"
         case .openai: return "gpt-5"
         case .anthropic: return "claude-opus-4-8"
-        case .gemini: return "gemini-2.5-flash"
+        case .gemini: return "gemini-flash-latest"
         }
     }
 }

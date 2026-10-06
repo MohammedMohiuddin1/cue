@@ -3,10 +3,25 @@ import Foundation
 /// Classifies a user question so the answer style can adapt: coding questions
 /// get code + complexity; behavioral/resume/conceptual questions get a natural,
 /// conversational answer (no forced code), even inside a coding-focused Mode.
-public enum QuestionKind: Equatable {
+public enum QuestionKind: Equatable, Sendable {
     case coding        // implement / solve / algorithm → code + complexity
     case behavioral    // tell me about yourself / projects / experience → conversational
     case conceptual    // explain / what is / difference → explain, code only if it clarifies
+
+    /// Short name shown in the overlay.
+    public var label: String {
+        switch self {
+        case .coding: return "coding"
+        case .behavioral: return "behavioral"
+        case .conceptual: return "conceptual"
+        }
+    }
+
+    /// Coding answers need the model's full reasoning to be correct; behavioral
+    /// and conceptual answers barely improve with it, so they ask for less.
+    public var reasoningEffort: ReasoningEffort {
+        self == .coding ? .standard : .low
+    }
 
     /// A one-line style directive appended to the system prompt for this kind.
     public var styleDirective: String {
@@ -14,7 +29,18 @@ public enum QuestionKind: Equatable {
         case .coding:
             return "This is a coding/DSA question: give a correct, idiomatic code solution and state time and space complexity."
         case .behavioral:
-            return "This is a behavioral / resume / project question. Answer conversationally in the first person, as the candidate speaking in an interview. Draw on the reference material about the user. Do NOT write code or complexity analysis unless explicitly asked."
+            return """
+            This is a behavioral / resume / personal question. Answer in the first person, as the candidate speaking in an interview. Do NOT write code or complexity analysis unless explicitly asked.
+            If the reference material or prepared STAR stories contain a relevant experience, build the answer from it using STAR (situation, task, action, result) and keep its real details.
+            If nothing relevant is there, give a strong best-practice answer the user can personalize. Never invent employers, projects, dates or numbers; put a [bracketed placeholder] where their own example goes.
+            Use this format:
+            Say: "<one or two sentence opening they can say word for word>"
+            Then:
+            • <talking point>
+            • <talking point>
+            • <talking point>
+            Close: "<one sentence wrap-up>"
+            """
         case .conceptual:
             return "This is a conceptual question. Explain clearly and concisely. Include a short code example only if it genuinely aids understanding; do not force code or complexity analysis."
         }
@@ -23,36 +49,72 @@ public enum QuestionKind: Equatable {
     /// Classify from the question text using simple keyword heuristics (works on
     /// small local models without an extra LLM call).
     public static func classify(_ text: String) -> QuestionKind {
-        let q = text.lowercased()
+        match(text) ?? .conceptual
+    }
 
+    /// Detect the kind from what was actually asked. `question` is the typed
+    /// question or a fixed button prompt; `context` is the transcript or screen
+    /// text. A typed question is checked first (`questionFirst: true`). A fixed
+    /// button prompt says nothing about the real question, so the context is
+    /// checked first, using whichever signal appears latest in it — in a
+    /// transcript, the interviewer's most recent question wins.
+    public static func detect(question: String, context: String?, questionFirst: Bool) -> QuestionKind {
+        let fromQuestion = { match(question) }
+        let fromContext = { context.flatMap(latestMatch) }
+        let found = questionFirst ? (fromQuestion() ?? fromContext())
+                                  : (fromContext() ?? fromQuestion())
+        return found ?? .conceptual
+    }
+
+    // Checked in this order; earlier groups win when a text matches several.
+    private static let signals: [(QuestionKind, [String])] = [
         // Behavioral / resume / project signals.
-        let behavioral = [
+        (.behavioral, [
             "tell me about", "tell me some", "walk me through", "your project", "your projects",
             "my project", "my projects", "your experience", "my experience", "your resume",
             "my resume", "why did you", "why do you", "describe a time", "describe your",
             "strength", "weakness", "challenge you", "conflict", "yourself",
             "worked on", "have you built", "have you made", "you have made", "you have built",
             "about you", "your background", "your role", "your contribution"
-        ]
-        if behavioral.contains(where: q.contains) { return .behavioral }
-
+        ]),
         // Coding signals.
-        let coding = [
+        (.coding, [
             "implement", "write a function", "write code", "code for", "solve", "leetcode",
             "algorithm", "time complexity", "space complexity", "big o", "reverse a",
             "given an array", "given a string", "given a", "return the", "find the",
             "two sum", "linked list", "binary tree", "sort", "recursion", "dynamic programming"
-        ]
-        if coding.contains(where: q.contains) { return .coding }
-
+        ]),
+        // Softer behavioral signals, checked after coding so "how do you reverse
+        // a linked list" stays a coding question.
+        (.behavioral, [
+            "how do you", "how would you handle", "what would you do", "a time when",
+            "a time you", "why should we hire", "why this company", "want to work here",
+            "where do you see yourself", "what motivates", "your approach to",
+            "mistake", "teammate", "your manager", "deadline", "leadership"
+        ]),
         // Conceptual signals.
-        let conceptual = [
+        (.conceptual, [
             "explain", "what is", "what are", "difference between", "how does", "how do",
             "why is", "compare", "when should", "pros and cons", "trade-off", "tradeoff"
-        ]
-        if conceptual.contains(where: q.contains) { return .conceptual }
+        ]),
+    ]
 
-        // Default: conceptual (safe, doesn't force code).
-        return .conceptual
+    /// The first group with any keyword in `text`, or nil if none match.
+    static func match(_ text: String) -> QuestionKind? {
+        let q = text.lowercased()
+        return signals.first { $0.1.contains(where: q.contains) }?.0
+    }
+
+    /// The group whose keyword occurs latest in `text`; ties go to the earlier group.
+    static func latestMatch(_ text: String) -> QuestionKind? {
+        let q = text.lowercased()
+        var best: (kind: QuestionKind, position: String.Index)?
+        for (kind, keywords) in signals {
+            for keyword in keywords {
+                guard let position = q.range(of: keyword, options: .backwards)?.lowerBound else { continue }
+                if best == nil || position > best!.position { best = (kind, position) }
+            }
+        }
+        return best?.kind
     }
 }

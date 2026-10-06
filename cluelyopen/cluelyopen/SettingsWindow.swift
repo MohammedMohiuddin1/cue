@@ -16,6 +16,8 @@ struct SettingsRoot: View {
     let installedModels: [String]
     let permissions: PermissionsManager
     var onProviderChanged: () -> Void = {}
+    var onModeChanged: () -> Void = {}
+    var generateStories: (String) -> AsyncThrowingStream<String, Error> = { _ in AsyncThrowingStream { $0.finish() } }
 
     @State private var textModel: String
     @State private var visionModel: String
@@ -24,18 +26,27 @@ struct SettingsRoot: View {
     @State private var materials: String
     @State private var provider: Provider
     @State private var apiKey: String
+    @State private var codeLanguage: String
+    @State private var starStories: String
+    @State private var showingStories = false
+    @State private var generatingStories = false
+    @State private var storiesStatus = ""
 
     @State private var hasScreen = false
     @State private var hasAccess = false
     private let ticker = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
 
     init(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String],
-         permissions: PermissionsManager, onProviderChanged: @escaping () -> Void = {}) {
+         permissions: PermissionsManager, onProviderChanged: @escaping () -> Void = {},
+         onModeChanged: @escaping () -> Void = {},
+         generateStories: @escaping (String) -> AsyncThrowingStream<String, Error>) {
         self.settings = settings
         self.modes = modes
         self.installedModels = installedModels
         self.permissions = permissions
         self.onProviderChanged = onProviderChanged
+        self.onModeChanged = onModeChanged
+        self.generateStories = generateStories
         _textModel = State(initialValue: settings.textModel)
         _visionModel = State(initialValue: settings.visionModel)
         _whisperModel = State(initialValue: settings.whisperModel)
@@ -43,6 +54,8 @@ struct SettingsRoot: View {
         _materials = State(initialValue: settings.referenceMaterials)
         _provider = State(initialValue: settings.provider)
         _apiKey = State(initialValue: settings.apiKey(for: settings.provider))
+        _codeLanguage = State(initialValue: settings.codeLanguage)
+        _starStories = State(initialValue: settings.starStories)
     }
 
     private let whisperOptions = ["base.en", "small.en", "medium.en"]
@@ -127,6 +140,14 @@ struct SettingsRoot: View {
 
     private var generalTab: some View {
         Form {
+            Section("Code language") {
+                Picker("Write code in", selection: $codeLanguage) {
+                    ForEach(OpenCluelyCore.Settings.codeLanguages, id: \.self) { Text($0).tag($0) }
+                }
+                .onChange(of: codeLanguage) { settings.codeLanguage = $1 }
+                Text("Used for every answer unless your question asks for another language.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Text model (answers)") {
                 modelPicker(selection: $textModel) { settings.textModel = $0 }
             }
@@ -188,6 +209,7 @@ struct SettingsRoot: View {
                 Spacer()
                 Button("Set Active") {
                     modes.setActive(id: activeModeID)
+                    onModeChanged()
                 }
                 .disabled(modes.activeMode.id == activeModeID)
             }
@@ -199,6 +221,20 @@ struct SettingsRoot: View {
     // MARK: Materials (resume / reference docs, always in context)
 
     private var materialsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("", selection: $showingStories) {
+                Text("Resume & notes").tag(false)
+                Text("STAR stories").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if showingStories { storiesEditor } else { materialsEditor }
+        }
+        .padding(4)
+    }
+
+    private var materialsEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Reference Materials").font(.title3).bold()
             Text("Your resume, project notes, or any reference text. This is always given to the model as context, so it can answer resume/project/behavioral questions — not just DSA.")
@@ -232,7 +268,65 @@ struct SettingsRoot: View {
             Text("Tip: keep it concise — very long materials use more tokens and slow answers.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
-        .padding(4)
+    }
+
+    // Prepared behavioral answers, generated once from the resume and editable.
+    // Sent only with behavioral questions.
+    private var storiesEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("STAR Stories").font(.title3).bold()
+            Text("Ready-made answers to common behavioral questions, written from your resume. Behavioral answers use these first. Edit them so they sound like you.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button {
+                    generateStarStories()
+                } label: {
+                    Label(starStories.isEmpty ? "Generate from resume" : "Regenerate from resume",
+                          systemImage: "sparkles")
+                }
+                .disabled(generatingStories || materials.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if generatingStories { ProgressView().controlSize(.small) }
+                Text(storiesStatus).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Spacer()
+                Button("Clear") {
+                    starStories = ""
+                    settings.starStories = ""
+                }.foregroundStyle(.red)
+            }
+
+            TextEditor(text: $starStories)
+                .font(.system(.callout, design: .monospaced))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(0.3)))
+                .onChange(of: starStories) { settings.starStories = $1 }
+        }
+    }
+
+    private func generateStarStories() {
+        if !starStories.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Replace your STAR stories?"
+            alert.informativeText = "Regenerating overwrites the current stories, including your edits."
+            alert.addButton(withTitle: "Replace")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        generatingStories = true
+        storiesStatus = "Writing stories…"
+        starStories = ""
+        Task { @MainActor in
+            do {
+                for try await chunk in generateStories(materials) { starStories += chunk }
+                storiesStatus = starStories.isEmpty ? "The model returned nothing. Check Provider settings." : ""
+            } catch LLMError.api(let provider, _, let message) {
+                storiesStatus = "\(provider) error: \(message)"
+            } catch {
+                storiesStatus = "Failed: \(error.localizedDescription)"
+            }
+            generatingStories = false
+        }
     }
 
     // MARK: Permissions
@@ -308,14 +402,17 @@ final class SettingsWindowController {
     private var window: NSWindow?
 
     func show(settings: OpenCluelyCore.Settings, modes: ModesManager, installedModels: [String],
-              permissions: PermissionsManager, onProviderChanged: @escaping () -> Void = {}) {
+              permissions: PermissionsManager, onProviderChanged: @escaping () -> Void = {},
+              onModeChanged: @escaping () -> Void = {},
+              generateStories: @escaping (String) -> AsyncThrowingStream<String, Error>) {
         if let window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         let root = SettingsRoot(settings: settings, modes: modes, installedModels: installedModels,
-                                permissions: permissions, onProviderChanged: onProviderChanged)
+                                permissions: permissions, onProviderChanged: onProviderChanged,
+                                onModeChanged: onModeChanged, generateStories: generateStories)
         // Let the hosting controller size the window to the SwiftUI content so
         // the window and the TabView agree on dimensions (otherwise the tab bar
         // overflows into the "Navigation Tab Bar" menu and the window mis-sizes).

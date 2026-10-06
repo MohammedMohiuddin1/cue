@@ -82,6 +82,21 @@ public final class Settings {
         set { store.setString(newValue, forKey: "referenceMaterials") }
     }
 
+    /// STAR stories generated from the reference materials (editable). Only sent
+    /// with behavioral questions, so coding answers don't pay for the tokens.
+    public var starStories: String {
+        get { store.string(forKey: "starStories") ?? "" }
+        set { store.setString(newValue, forKey: "starStories") }
+    }
+
+    /// The language generated code is written in unless a question asks for another.
+    public var codeLanguage: String {
+        get { store.string(forKey: "codeLanguage") ?? "Python" }
+        set { store.setString(newValue, forKey: "codeLanguage") }
+    }
+    public static let codeLanguages = ["Python", "Java", "C++", "JavaScript", "TypeScript",
+                                       "Go", "C#", "Kotlin", "Swift", "Rust"]
+
     /// The inference provider (local Ollama by default; cloud providers BYOK).
     public var provider: Provider {
         get { Provider(rawValue: store.string(forKey: "provider") ?? "") ?? .ollama }

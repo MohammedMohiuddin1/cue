@@ -8,10 +8,12 @@ final class FakeLLM: LLMClient, @unchecked Sendable {
     var lastSystem = ""
     var lastUser = ""
     var toEmit: [String] = ["ok"]
+    var lastEffort: ReasoningEffort?
     var errorToThrow: Error?
 
-    func chat(system: String, user: String, model: String, images: [Data]) async throws -> AsyncThrowingStream<String, Error> {
-        lastModel = model; lastImages = images; lastSystem = system; lastUser = user
+    func chat(system: String, user: String, model: String, images: [Data],
+              effort: ReasoningEffort) async throws -> AsyncThrowingStream<String, Error> {
+        lastModel = model; lastImages = images; lastSystem = system; lastUser = user; lastEffort = effort
         let emit = toEmit
         let err = errorToThrow
         return AsyncThrowingStream { c in
@@ -86,4 +88,58 @@ private func makeEngine(_ fake: FakeLLM) -> AnswerEngine {
     await #expect(throws: LLMError.notRunning) {
         for try await _ in makeEngine(fake).answer(userText: "q", context: .none) {}
     }
+}
+
+@Test func codeLanguageSettingFlowsIntoSystem() async throws {
+    let fake = FakeLLM()
+    let store = InMemoryStore()
+    let settings = Settings(store: store, tier: .high)
+    for try await _ in AnswerEngine(client: fake, modes: ModesManager(store: store), settings: settings)
+        .answer(userText: "q", context: .none) {}
+    #expect(fake.lastSystem.contains("Write all code in Python"))
+
+    settings.codeLanguage = "Java"
+    for try await _ in AnswerEngine(client: fake, modes: ModesManager(store: store), settings: settings)
+        .answer(userText: "q", context: .none) {}
+    #expect(fake.lastSystem.contains("Write all code in Java"))
+}
+
+@Test func codingQuestionsUseStandardEffortOthersLow() async throws {
+    let fake = FakeLLM()
+    let engine = makeEngine(fake)
+    for try await _ in engine.answer(userText: "implement quicksort", context: .none) {}
+    #expect(fake.lastEffort == .standard)
+    for try await _ in engine.answer(userText: "tell me about yourself", context: .none) {}
+    #expect(fake.lastEffort == .low)
+}
+
+@Test func explicitKindOverridesDetection() async throws {
+    let fake = FakeLLM()
+    for try await _ in makeEngine(fake).answer(userText: "Answer or solve the question shown on the screen.",
+                                               context: .text("tell me about yourself"),
+                                               kind: .behavioral) {}
+    #expect(fake.lastSystem.contains("behavioral"))
+    #expect(fake.lastEffort == .low)
+}
+
+@Test func starStoriesOnlySentWithBehavioralQuestions() async throws {
+    let fake = FakeLLM()
+    let store = InMemoryStore()
+    let settings = Settings(store: store, tier: .high)
+    settings.starStories = "### Tell me about yourself.\nSituation: STORY-MARKER"
+    let engine = AnswerEngine(client: fake, modes: ModesManager(store: store), settings: settings)
+
+    for try await _ in engine.answer(userText: "tell me about yourself", context: .none) {}
+    #expect(fake.lastSystem.contains("STORY-MARKER"))
+
+    for try await _ in engine.answer(userText: "implement quicksort", context: .none) {}
+    #expect(!fake.lastSystem.contains("STORY-MARKER"))
+}
+
+@Test func generateStarStoriesSendsResumeAndQuestions() async throws {
+    let fake = FakeLLM()
+    for try await _ in makeEngine(fake).generateStarStories(resume: "Built a distributed cache at Acme.") {}
+    #expect(fake.lastUser.contains("distributed cache at Acme"))
+    #expect(fake.lastUser.contains(StarStories.commonQuestions[0]))
+    #expect(fake.lastSystem.contains("Never invent"))
 }

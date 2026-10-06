@@ -147,7 +147,12 @@ final class AppCore: NSObject, NSApplicationDelegate {
             let installed = await ModelList.installed()
             settingsWindow.show(settings: settings, modes: modes, installedModels: installed,
                                 permissions: permissions,
-                                onProviderChanged: { [weak self] in self?.rebuildEngine() })
+                                onProviderChanged: { [weak self] in self?.rebuildEngine() },
+                                onModeChanged: { [weak self] in self?.refreshModeIndicator() },
+                                generateStories: { [weak self] resume in
+                                    self?.engine.generateStarStories(resume: resume)
+                                        ?? AsyncThrowingStream { $0.finish() }
+                                })
         }
     }
 
@@ -169,6 +174,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
             onScreenshot: { [weak self] in self?.captureScreenshot() },
             onUploadFile: { [weak self] in self?.uploadFile() },
             onSelectModel: { [weak self] name in self?.selectModel(name) },
+            onSelectMode: { [weak self] id in self?.selectMode(id) },
             onEndSession: { [weak self] in self?.endSession() },
             onOpenSettings: { [weak self] in self?.openSettings() }
         )
@@ -187,6 +193,19 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
         model.currentModel = settings.textModel
         refreshModelList()
+        refreshModeIndicator()
+    }
+
+    /// Mirror the active mode into the overlay's mode menu.
+    private func refreshModeIndicator() {
+        model.modeOptions = modes.builtInModes
+        model.activeModeID = modes.activeMode.id
+        model.modeName = modes.activeMode.name
+    }
+
+    private func selectMode(_ id: String) {
+        modes.setActive(id: id)
+        refreshModeIndicator()
     }
 
     /// Load the models the user has actually pulled in Ollama, and if the
@@ -404,10 +423,12 @@ final class AppCore: NSObject, NSApplicationDelegate {
         let context: AnswerContext = isListening && !transcript.recent.isEmpty
             ? .text(transcript.recent)
             : .none
-        ask(q, context: context)
+        ask(q, context: context, typed: true)
     }
 
-    private func ask(_ q: String, context: AnswerContext, label: String? = nil) {
+    /// `typed` is true when the user wrote the question; fixed button prompts
+    /// ("Answer the question on my screen") leave the question type to the context.
+    private func ask(_ q: String, context: AnswerContext, label: String? = nil, typed: Bool = false) {
         model.startSessionIfNeeded()
         model.query = q
         model.answer = ""
@@ -425,18 +446,27 @@ final class AppCore: NSObject, NSApplicationDelegate {
             case .none: model.contextLabel = ""
             }
         }
-        NSLog("OpenCluely ask: q=\"%@\" model=%@", q, settings.textModel)
+        // Detect the question type here so the overlay can show it; screenshots
+        // go to the vision model without a type.
+        let kind: QuestionKind?
+        switch context {
+        case .none: kind = QuestionKind.detect(question: q, context: nil, questionFirst: true)
+        case .text(let t): kind = QuestionKind.detect(question: q, context: t, questionFirst: typed)
+        case .image: kind = nil
+        }
+        model.kindLabel = kind?.label ?? ""
+        NSLog("OpenCluely ask: q=\"%@\" model=%@ kind=%@", q, settings.textModel, kind?.label ?? "image")
         Task { @MainActor in
             var tokenCount = 0
             do {
-                for try await tok in engine.answer(userText: q, context: context) {
+                for try await tok in engine.answer(userText: q, context: context, kind: kind) {
                     tokenCount += 1
                     model.answer += tok
                     if model.status == "Thinking…" { model.status = "" }
                 }
                 NSLog("OpenCluely ask: done, %d tokens, answerLen=%d", tokenCount, model.answer.count)
                 if tokenCount == 0 {
-                    model.status = "No response from model (0 tokens). Check the model name in Ollama."
+                    model.status = "No response from model (0 tokens). Check the model name in Settings."
                 } else {
                     // Commit the completed exchange to the current session log,
                     // then clear the live streaming fields.
@@ -452,7 +482,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
                 model.status = "Model missing. In Terminal: ollama pull \(m)"
             } catch LLMError.api(let provider, let code, let message) {
                 NSLog("OpenCluely ask: LLMError.api(%@, %d, %@)", provider, code, message)
-                model.status = "\(provider) error (HTTP \(code)): \(message)"
+                model.status = code > 0 ? "\(provider) error (HTTP \(code)): \(message)"
+                                        : "\(provider) error: \(message)"
             } catch LLMError.http(let code) {
                 NSLog("OpenCluely ask: LLMError.http(%d)", code)
                 model.status = "Ollama error (HTTP \(code))."

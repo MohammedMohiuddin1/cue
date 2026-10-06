@@ -10,7 +10,8 @@ public final class OllamaClient: LLMClient {
         self.session = session
     }
 
-    public func chat(system: String, user: String, model: String, images: [Data]) async throws -> AsyncThrowingStream<String, Error> {
+    public func chat(system: String, user: String, model: String, images: [Data],
+                     effort: ReasoningEffort) async throws -> AsyncThrowingStream<String, Error> {
         var req = URLRequest(url: baseURL.appendingPathComponent("/api/chat"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -35,7 +36,8 @@ public final class OllamaClient: LLMClient {
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let (data, response) = try await session.data(for: finalRequest)
+                    // Read NDJSON lines as they arrive so tokens show up live.
+                    let (bytes, response) = try await session.bytes(for: finalRequest)
                     if let http = response as? HTTPURLResponse {
                         switch http.statusCode {
                         case 200: break
@@ -43,8 +45,7 @@ public final class OllamaClient: LLMClient {
                         default: throw LLMError.http(http.statusCode)
                         }
                     }
-                    let text = String(decoding: data, as: UTF8.self)
-                    for line in text.split(separator: "\n") {
+                    for try await line in bytes.lines {
                         guard let lineData = line.data(using: .utf8),
                               let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                               let msg = obj["message"] as? [String: Any],

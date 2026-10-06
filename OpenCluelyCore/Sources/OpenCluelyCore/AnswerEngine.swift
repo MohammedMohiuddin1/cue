@@ -17,7 +17,10 @@ public final class AnswerEngine {
         self.settings = settings
     }
 
-    public func answer(userText: String, context: AnswerContext) -> AsyncThrowingStream<String, Error> {
+    /// Answer a question. `kind` is the caller's detected question type; when nil
+    /// it is detected from the question text, then the context.
+    public func answer(userText: String, context: AnswerContext,
+                       kind: QuestionKind? = nil) -> AsyncThrowingStream<String, Error> {
         let mode = modes.activeMode
         let contextText: String?
         let images: [Data]
@@ -30,16 +33,25 @@ public final class AnswerEngine {
         case .image(let d):
             contextText = nil; images = [d]; model = settings.visionModel
         }
-        let prompt = PromptBuilder.build(mode: mode, userText: userText, contextText: contextText)
+        let prompt = PromptBuilder.build(mode: mode, userText: userText, contextText: contextText,
+                                         language: settings.codeLanguage)
 
         // Always prepend the user's persistent reference materials (resume,
         // project notes) so the model can answer resume/project questions.
         var system = prompt.system
+        var effort = ReasoningEffort.standard
 
         // Adapt the answer style to the question type so behavioral/resume
         // questions get a conversational answer even in a coding-focused Mode.
         if case .image = context {} else {
-            system += "\n\n" + QuestionKind.classify(userText).styleDirective
+            let kind = kind ?? QuestionKind.detect(question: userText, context: contextText,
+                                                   questionFirst: true)
+            system += "\n\n" + kind.styleDirective
+            effort = kind.reasoningEffort
+            let stories = settings.starStories.trimmingCharacters(in: .whitespacesAndNewlines)
+            if kind == .behavioral && !stories.isEmpty {
+                system += "\n\nPrepared STAR stories from the user's resume. Prefer one of these when it fits:\n\(stories)"
+            }
         }
 
         let materials = settings.referenceMaterials.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,19 +59,31 @@ public final class AnswerEngine {
             system = "Reference material about the user (their resume / projects). "
                    + "Use it when relevant:\n\(materials)\n\n" + system
         }
-        let client = self.client
-        let finalSystem = system
+        return stream(system: system, user: prompt.user, model: model, images: images, effort: effort)
+    }
 
+    /// Write STAR stories for common behavioral questions from the user's resume.
+    public func generateStarStories(resume: String) -> AsyncThrowingStream<String, Error> {
+        let prompt = StarStories.prompt(resume: resume)
+        return stream(system: prompt.system, user: prompt.user, model: settings.textModel,
+                      images: [], effort: .standard)
+    }
+
+    private func stream(system: String, user: String, model: String, images: [Data],
+                        effort: ReasoningEffort) -> AsyncThrowingStream<String, Error> {
+        let client = self.client
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
-                    let stream = try await client.chat(system: finalSystem, user: prompt.user, model: model, images: images)
+                    let stream = try await client.chat(system: system, user: user, model: model,
+                                                       images: images, effort: effort)
                     for try await tok in stream { continuation.yield(tok) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

@@ -24,3 +24,44 @@ import Testing
 @Test func behavioralDirectiveForbidsForcedCode() {
     #expect(QuestionKind.behavioral.styleDirective.lowercased().contains("do not write code"))
 }
+
+@Test func softBehavioralQuestionsAreBehavioral() {
+    #expect(QuestionKind.classify("how do you learn emerging technologies") == .behavioral)
+    #expect(QuestionKind.classify("why should we hire you") == .behavioral)
+    #expect(QuestionKind.classify("how would you handle a missed deadline") == .behavioral)
+}
+
+@Test func codingStillWinsOverSoftBehavioral() {
+    #expect(QuestionKind.classify("how do you reverse a linked list") == .coding)
+}
+
+@Test func buttonPromptDefersToContext() {
+    let prompt = "Answer or solve the question shown on the screen."
+    #expect(QuestionKind.detect(question: prompt, context: "Tell me about a time you led a team",
+                                questionFirst: false) == .behavioral)
+    #expect(QuestionKind.detect(question: prompt, context: "Given an array nums, return the indices",
+                                questionFirst: false) == .coding)
+    // Nothing recognizable in the context: fall back to the prompt.
+    #expect(QuestionKind.detect(question: prompt, context: "hello there",
+                                questionFirst: false) == .coding)
+}
+
+@Test func latestQuestionInTranscriptWins() {
+    let transcript = "Tell me about yourself. Great, thanks. Now, given an array of integers, find the two that sum to target."
+    #expect(QuestionKind.detect(question: "Answer the most recent question from the conversation.",
+                                context: transcript, questionFirst: false) == .coding)
+    let reversed = "Given an array, find two numbers. Nice solution. Okay, how do you learn emerging technologies?"
+    #expect(QuestionKind.detect(question: "Answer the most recent question from the conversation.",
+                                context: reversed, questionFirst: false) == .behavioral)
+}
+
+@Test func typedQuestionBeatsContext() {
+    #expect(QuestionKind.detect(question: "implement this", context: "tell me about yourself",
+                                questionFirst: true) == .coding)
+}
+
+@Test func onlyCodingGetsFullReasoning() {
+    #expect(QuestionKind.coding.reasoningEffort == .standard)
+    #expect(QuestionKind.behavioral.reasoningEffort == .low)
+    #expect(QuestionKind.conceptual.reasoningEffort == .low)
+}

@@ -1,12 +1,16 @@
 public enum PromptBuilder {
-    static let baseline = "You are Cue, a concise technical interview assistant. Answer directly and correctly. Show code when relevant. Write all code in Python unless the user explicitly asks for another language, even if the screen shows a different language selected."
+    static func baseline(language: String) -> String {
+        "You are Cue, a concise technical interview assistant. Answer directly and correctly. Show code when relevant. Write all code in \(language) unless the user explicitly asks for another language, even if the screen shows a different language selected."
+    }
 
-    public static func build(mode: Mode, userText: String, contextText: String?) -> (system: String, user: String) {
+    public static func build(mode: Mode, userText: String, contextText: String?,
+                             language: String = "Python") -> (system: String, user: String) {
+        let base = baseline(language: language)
         let system: String
         if mode.systemPrompt.isEmpty {
-            system = baseline
+            system = base
         } else {
-            system = baseline + "\n\n" + mode.systemPrompt
+            system = base + "\n\n" + mode.systemPrompt
         }
 
         let user: String

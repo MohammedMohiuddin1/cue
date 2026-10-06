@@ -46,3 +46,17 @@ final class InMemoryStore: KeyValueStore {
     #expect(reloaded.overlayOrigin.x == expected.x)
     #expect(reloaded.overlayOrigin.y == expected.y)
 }
+
+@Test func codeLanguageDefaultsToPythonAndPersists() {
+    let store = InMemoryStore()
+    #expect(Settings(store: store, tier: .high).codeLanguage == "Python")
+    Settings(store: store, tier: .high).codeLanguage = "Go"
+    #expect(Settings(store: store, tier: .high).codeLanguage == "Go")
+}
+
+@Test func starStoriesPersist() {
+    let store = InMemoryStore()
+    #expect(Settings(store: store, tier: .high).starStories == "")
+    Settings(store: store, tier: .high).starStories = "### Q"
+    #expect(Settings(store: store, tier: .high).starStories == "### Q")
+}

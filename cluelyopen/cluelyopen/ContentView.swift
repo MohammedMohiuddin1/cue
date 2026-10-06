@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import OpenCluelyCore
 
 /// One entry in a session's continuous log — either a Q&A exchange or a chunk
 /// of transcribed meeting audio.
@@ -51,6 +52,10 @@ final class AnswerModel: ObservableObject {
     @Published var invisible: Bool = false
     @Published var availableModels: [String] = []
     @Published var currentModel: String = ""
+    @Published var modeOptions: [Mode] = []
+    @Published var activeModeID: String = ""
+    @Published var modeName: String = ""
+    @Published var kindLabel: String = ""          // type of the latest question, e.g. "coding"
     @Published var collapsed: Bool = false
     @Published var showHistory: Bool = false
 
@@ -117,6 +122,7 @@ struct OverlayBarView: View {
     var onScreenshot: () -> Void
     var onUploadFile: () -> Void
     var onSelectModel: (String) -> Void
+    var onSelectMode: (String) -> Void
     var onEndSession: () -> Void
     var onOpenSettings: () -> Void
     @State private var openedSession: ArchivedSession?
@@ -367,6 +373,26 @@ struct OverlayBarView: View {
                     .lineLimit(1)
                     .transition(.opacity)
             }
+
+            // Active mode, plus the type of the latest question; pick a mode here.
+            Menu {
+                ForEach(model.modeOptions) { mode in
+                    Button { onSelectMode(mode.id) } label: {
+                        if mode.id == model.activeModeID {
+                            Label(mode.name, systemImage: "checkmark")
+                        } else {
+                            Text(mode.name)
+                        }
+                    }
+                }
+            } label: {
+                Label(model.kindLabel.isEmpty ? model.modeName : "\(model.modeName) · \(model.kindLabel)",
+                      systemImage: "person.crop.rectangle.stack")
+                    .labelStyle(.titleAndIcon).font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Mode · type of the last question")
 
             // Model picker.
             Menu {
