@@ -10,6 +10,7 @@ import AppKit
 import SwiftUI
 import OpenCluelyCore
 
+@MainActor
 final class AppCore: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var overlay: OverlayBarWindow?
