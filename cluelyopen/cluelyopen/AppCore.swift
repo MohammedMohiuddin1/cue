@@ -38,11 +38,15 @@ final class AppCore: NSObject, NSApplicationDelegate {
     /// after stopping still has the conversation as context.
     private var lastHeard = ""
 
-    // Auto-answer: when a question is heard and the speaker pauses, answer it.
+    // Auto-answer: answer once a question is heard. The timer restarts on each
+    // new phrase until a question appears; after that it runs out even if
+    // speech continues, since a video or interviewer often keeps talking.
     private var pendingSpeech = ""          // heard since the last answer
     private var autoAnswerTask: Task<Void, Never>?
+    private var questionHeard = false       // the running timer is for a heard question
     private var answering = false
-    private static let autoAnswerPause: UInt64 = 2_500_000_000   // 2.5s of silence
+    private static let autoAnswerPause: UInt64 = 2_500_000_000      // silence, no question yet
+    private static let autoAnswerAfterQuestion: UInt64 = 3_000_000_000  // lets the question finish
 
     // Read Screen (OCR) wiring.
     private let screenReader = ScreenReader()
@@ -215,19 +219,35 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private func toggleAutoAnswer() {
         settings.autoAnswer.toggle()
         model.autoAnswer = settings.autoAnswer
-        model.status = settings.autoAnswer
-            ? "Auto-answer ON — questions heard while listening are answered after a short pause."
-            : "Auto-answer off — press ⌘↩ to answer."
-        if !settings.autoAnswer { autoAnswerTask?.cancel() }
+        guard settings.autoAnswer else {
+            cancelAutoAnswer()
+            model.status = "Auto-answer off — press ⌘↩ to answer."
+            return
+        }
+        // Auto-answer works on what Listen hears, so start listening too.
+        if !isListening { toggleListen() }
+        model.status = "Auto-answer ON — questions heard are answered automatically."
     }
 
-    /// Restart the pause timer on each new phrase; it fires once speech stops.
-    private func scheduleAutoAnswer() {
+    private func cancelAutoAnswer() {
         autoAnswerTask?.cancel()
-        guard settings.autoAnswer, isListening else { return }
+        autoAnswerTask = nil
+        questionHeard = false
+    }
+
+    /// Called on each new phrase. Before a question is heard, the timer restarts
+    /// so it fires after a pause; once one is heard, it is left to run out.
+    private func scheduleAutoAnswer() {
+        guard settings.autoAnswer, isListening else { cancelAutoAnswer(); return }
+        if questionHeard && autoAnswerTask != nil { return }
+        autoAnswerTask?.cancel()
+        questionHeard = QuestionKind.looksLikeQuestion(pendingSpeech)
+        let delay = questionHeard ? Self.autoAnswerAfterQuestion : Self.autoAnswerPause
         autoAnswerTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.autoAnswerPause)
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled, let self else { return }
+            self.autoAnswerTask = nil
+            self.questionHeard = false
             guard self.settings.autoAnswer, self.isListening, !self.answering,
                   QuestionKind.looksLikeQuestion(self.pendingSpeech) else { return }
             NSLog("OpenCluely auto-answer: firing")
@@ -483,7 +503,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
         model.startSessionIfNeeded()
         // Whatever was heard so far is covered by this answer.
         pendingSpeech = ""
-        autoAnswerTask?.cancel()
+        cancelAutoAnswer()
         answering = true
         model.query = q
         model.answer = ""
