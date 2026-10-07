@@ -27,7 +27,12 @@ public enum QuestionKind: Equatable, Sendable {
     public var styleDirective: String {
         switch self {
         case .coding:
-            return "This is a coding/DSA question. Give the code first, then one line for the approach and one line for time and space complexity. No other prose."
+            return """
+            This is a coding/DSA question. Reply with exactly this and nothing else:
+            Say: "<one or two sentences, first person, that they can say out loud before coding: the approach they're thinking of taking and why, e.g. "I'm thinking of using a hash map so each lookup is O(1)...">"
+            <the code>
+            Time: <complexity> · Space: <complexity>
+            """
         case .behavioral:
             return """
             This is a behavioral / resume / personal question. Answer in the first person, as the candidate speaking in an interview. Do NOT write code or complexity analysis unless explicitly asked.

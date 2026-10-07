@@ -87,3 +87,9 @@ import Testing
     #expect(QuestionKind.detect(question: "Answer the most recent question from the conversation.",
                                 context: heard, questionFirst: false) == .behavioral)
 }
+
+@Test func codingAnswerStartsWithSpokenApproach() {
+    let directive = QuestionKind.coding.styleDirective
+    #expect(directive.contains("Say:"))
+    #expect(directive.contains("approach they're thinking of taking"))
+}
