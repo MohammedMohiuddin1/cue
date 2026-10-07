@@ -60,3 +60,10 @@ final class InMemoryStore: KeyValueStore {
     Settings(store: store, tier: .high).starStories = "### Q"
     #expect(Settings(store: store, tier: .high).starStories == "### Q")
 }
+
+@Test func autoAnswerDefaultsOffAndPersists() {
+    let store = InMemoryStore()
+    #expect(Settings(store: store, tier: .high).autoAnswer == false)
+    Settings(store: store, tier: .high).autoAnswer = true
+    #expect(Settings(store: store, tier: .high).autoAnswer == true)
+}

@@ -142,4 +142,6 @@ private func makeEngine(_ fake: FakeLLM) -> AnswerEngine {
     #expect(fake.lastUser.contains("distributed cache at Acme"))
     #expect(fake.lastUser.contains(StarStories.commonQuestions[0]))
     #expect(fake.lastSystem.contains("Never invent"))
+    // Questions the resume can't answer get coaching instead of an empty slot.
+    #expect(fake.lastSystem.contains("How to answer"))
 }

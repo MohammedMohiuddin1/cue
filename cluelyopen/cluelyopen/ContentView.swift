@@ -49,6 +49,7 @@ final class AnswerModel: ObservableObject {
 
     // Feature / UI state.
     @Published var listening: Bool = false
+    @Published var autoAnswer: Bool = false
     @Published var invisible: Bool = false
     @Published var availableModels: [String] = []
     @Published var currentModel: String = ""
@@ -66,7 +67,7 @@ final class AnswerModel: ObservableObject {
     }
 
     var placeholder: String {
-        if listening { return "Ask about the conversation, or ⌘↩ for Answer" }
+        if listening { return "Press ↩ to answer what was just asked, or type a question" }
         if !sessionItems.isEmpty { return "Ask follow-up" }
         return "Ask anything, or ⌘↩ for Answer"
     }
@@ -116,7 +117,9 @@ struct OverlayBarView: View {
     @State private var hoverTip: String = ""   // custom tooltip (reliable on overlay panel)
 
     var onSubmit: (String) -> Void
+    var onAnswerFromContext: () -> Void   // ↩ on an empty box: answer what was just heard
     var onToggleListen: () -> Void
+    var onToggleAutoAnswer: () -> Void
     var onToggleInvisible: () -> Void
     var onReadScreen: () -> Void
     var onScreenshot: () -> Void
@@ -337,6 +340,13 @@ struct OverlayBarView: View {
                        tip: model.listening ? "Stop listening" : "Listen to meeting audio",
                        action: onToggleListen)
 
+            // Auto-answer — bolt, yellow when on.
+            iconButton(model.autoAnswer ? "bolt.fill" : "bolt",
+                       active: model.autoAnswer, activeColor: .yellow,
+                       tip: model.autoAnswer ? "Auto-answer on — click to turn off"
+                                             : "Auto-answer questions heard while listening",
+                       action: onToggleAutoAnswer)
+
             // Read Screen — a text-viewfinder (distinct from the invisibility eye).
             iconButton("text.viewfinder", active: false, activeColor: .primary,
                        tip: "Read the question on your screen", action: onReadScreen)
@@ -431,7 +441,7 @@ struct OverlayBarView: View {
 
     private func submit() {
         let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return }
+        guard !q.isEmpty else { onAnswerFromContext(); return }
         input = ""
         onSubmit(q)
     }

@@ -27,22 +27,21 @@ public enum QuestionKind: Equatable, Sendable {
     public var styleDirective: String {
         switch self {
         case .coding:
-            return "This is a coding/DSA question: give a correct, idiomatic code solution and state time and space complexity."
+            return "This is a coding/DSA question. Give the code first, then one line for the approach and one line for time and space complexity. No other prose."
         case .behavioral:
             return """
             This is a behavioral / resume / personal question. Answer in the first person, as the candidate speaking in an interview. Do NOT write code or complexity analysis unless explicitly asked.
-            If the reference material or prepared STAR stories contain a relevant experience, build the answer from it using STAR (situation, task, action, result) and keep its real details.
+            If the reference material or prepared STAR stories contain a relevant experience, build the answer from it and keep its real details.
             If nothing relevant is there, give a strong best-practice answer the user can personalize. Never invent employers, projects, dates or numbers; put a [bracketed placeholder] where their own example goes.
-            Use this format:
-            Say: "<one or two sentence opening they can say word for word>"
-            Then:
-            • <talking point>
-            • <talking point>
-            • <talking point>
+            Reply with exactly this and nothing else, under 70 words in total, with each bullet under 12 words:
+            Say: "<one sentence opening they can say word for word>"
+            • <situation and task>
+            • <what they did>
+            • <the result>
             Close: "<one sentence wrap-up>"
             """
         case .conceptual:
-            return "This is a conceptual question. Explain clearly and concisely. Include a short code example only if it genuinely aids understanding; do not force code or complexity analysis."
+            return "This is a conceptual question. Answer in 2 to 4 sentences. Include a short code example only if it genuinely aids understanding; do not force code or complexity analysis."
         }
     }
 
@@ -64,6 +63,15 @@ public enum QuestionKind: Equatable, Sendable {
         let found = questionFirst ? (fromQuestion() ?? fromContext())
                                   : (fromContext() ?? fromQuestion())
         return found ?? .conceptual
+    }
+
+    /// Whether speech heard since the last answer contains a question worth
+    /// answering automatically: a question mark or a known question phrase, and
+    /// at least five words, so fillers like "right?" don't trigger an answer.
+    public static func looksLikeQuestion(_ speech: String) -> Bool {
+        let words = speech.split(whereSeparator: \.isWhitespace).count
+        guard words >= 5 else { return false }
+        return speech.contains("?") || latestMatch(speech) != nil
     }
 
     // Checked in this order; earlier groups win when a text matches several.
@@ -105,16 +113,14 @@ public enum QuestionKind: Equatable, Sendable {
         return signals.first { $0.1.contains(where: q.contains) }?.0
     }
 
-    /// The group whose keyword occurs latest in `text`; ties go to the earlier group.
+    /// The kind of the last sentence that matches any group. Within a sentence
+    /// the usual group order applies, so "tell me about a time you had to explain
+    /// X" stays behavioral even though "explain" comes later.
     static func latestMatch(_ text: String) -> QuestionKind? {
-        let q = text.lowercased()
-        var best: (kind: QuestionKind, position: String.Index)?
-        for (kind, keywords) in signals {
-            for keyword in keywords {
-                guard let position = q.range(of: keyword, options: .backwards)?.lowerBound else { continue }
-                if best == nil || position > best!.position { best = (kind, position) }
-            }
+        let sentences = text.split(whereSeparator: { ".?!".contains($0) })
+        for sentence in sentences.reversed() {
+            if let kind = match(String(sentence)) { return kind }
         }
-        return best?.kind
+        return nil
     }
 }

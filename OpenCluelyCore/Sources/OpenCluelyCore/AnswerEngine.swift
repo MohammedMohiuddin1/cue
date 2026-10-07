@@ -107,14 +107,24 @@ public enum StarStories {
     public static func prompt(resume: String) -> (system: String, user: String) {
         let system = """
         You write interview preparation notes. Using only the experience in the user's resume, write a STAR story for each question.
-        Never invent employers, projects, dates or numbers. If the resume has nothing that fits a question, write "No matching experience in resume — add your own." under it.
-        Format each one exactly like this, and keep each story under 120 words:
+        Never invent employers, projects, dates or numbers.
+        When the resume has a fitting experience, format it exactly like this, under 120 words:
         ### <question>
         Situation: ...
         Task: ...
         Action: ...
         Result: ...
         Opening line: "..."
+
+        When the resume has nothing that fits, coach the user instead, under 120 words:
+        ### <question>
+        No matching experience in resume.
+        What the interviewer is looking for: <one sentence>
+        How to answer:
+        - <tip>
+        - <tip>
+        - <tip>
+        Example skeleton: "<a first-person answer with [placeholders] for their own details>"
         """
         let questions = commonQuestions.map { "- \($0)" }.joined(separator: "\n")
         let user = "Resume:\n\(resume)\n\nQuestions:\n\(questions)"

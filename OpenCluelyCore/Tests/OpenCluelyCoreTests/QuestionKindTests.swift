@@ -65,3 +65,25 @@ import Testing
     #expect(QuestionKind.behavioral.reasoningEffort == .low)
     #expect(QuestionKind.conceptual.reasoningEffort == .low)
 }
+
+@Test func autoAnswerTriggersOnRealQuestions() {
+    #expect(QuestionKind.looksLikeQuestion("so tell me about a time you disagreed with your manager"))
+    #expect(QuestionKind.looksLikeQuestion("what made you choose that particular database?"))
+    #expect(QuestionKind.looksLikeQuestion("given an array of integers return the two that sum to target"))
+}
+
+@Test func autoAnswerIgnoresFillerAndSmallTalk() {
+    #expect(!QuestionKind.looksLikeQuestion("right?"))
+    #expect(!QuestionKind.looksLikeQuestion("okay sounds good"))
+    #expect(!QuestionKind.looksLikeQuestion("thanks so much for joining us today everyone"))
+}
+
+@Test func behavioralFormatIsCapped() {
+    #expect(QuestionKind.behavioral.styleDirective.contains("under 70 words"))
+}
+
+@Test func laterKeywordInSameSentenceDoesNotOverrideBehavioral() {
+    let heard = "the next one is tell me about a time when you had to explain a technical concept to a non-technical person"
+    #expect(QuestionKind.detect(question: "Answer the most recent question from the conversation.",
+                                context: heard, questionFirst: false) == .behavioral)
+}

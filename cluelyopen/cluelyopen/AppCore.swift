@@ -34,6 +34,15 @@ final class AppCore: NSObject, NSApplicationDelegate {
     private let audio = AudioCapture()
     private var transcriber: Transcriber?   // lazily created on first Listen
     private var isListening = false
+    /// What Listen captured before it was last stopped, so a question asked right
+    /// after stopping still has the conversation as context.
+    private var lastHeard = ""
+
+    // Auto-answer: when a question is heard and the speaker pauses, answer it.
+    private var pendingSpeech = ""          // heard since the last answer
+    private var autoAnswerTask: Task<Void, Never>?
+    private var answering = false
+    private static let autoAnswerPause: UInt64 = 2_500_000_000   // 2.5s of silence
 
     // Read Screen (OCR) wiring.
     private let screenReader = ScreenReader()
@@ -63,6 +72,8 @@ final class AppCore: NSObject, NSApplicationDelegate {
                 let clean = Self.cleanSpeech(phrase)
                 guard !clean.isEmpty else { return }
                 self.transcript.append(clean + " ")
+                self.pendingSpeech += clean + " "
+                self.scheduleAutoAnswer()
                 // Live transcript grows in the current session box.
                 self.model.startSessionIfNeeded()
                 self.model.liveTranscript = self.transcript.recent
@@ -168,7 +179,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
         let view = OverlayBarView(
             model: model,
             onSubmit: { [weak self] q in self?.askUsingCurrentContext(q) },
+            onAnswerFromContext: { [weak self] in self?.answerFromHotkey() },
             onToggleListen: { [weak self] in self?.toggleListen() },
+            onToggleAutoAnswer: { [weak self] in self?.toggleAutoAnswer() },
             onToggleInvisible: { [weak self] in self?.toggleInvisible() },
             onReadScreen: { [weak self] in self?.readScreen() },
             onScreenshot: { [weak self] in self?.captureScreenshot() },
@@ -194,6 +207,32 @@ final class AppCore: NSObject, NSApplicationDelegate {
         model.currentModel = settings.textModel
         refreshModelList()
         refreshModeIndicator()
+        model.autoAnswer = settings.autoAnswer
+    }
+
+    // MARK: - Auto-answer
+
+    private func toggleAutoAnswer() {
+        settings.autoAnswer.toggle()
+        model.autoAnswer = settings.autoAnswer
+        model.status = settings.autoAnswer
+            ? "Auto-answer ON — questions heard while listening are answered after a short pause."
+            : "Auto-answer off — press ⌘↩ to answer."
+        if !settings.autoAnswer { autoAnswerTask?.cancel() }
+    }
+
+    /// Restart the pause timer on each new phrase; it fires once speech stops.
+    private func scheduleAutoAnswer() {
+        autoAnswerTask?.cancel()
+        guard settings.autoAnswer, isListening else { return }
+        autoAnswerTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.autoAnswerPause)
+            guard !Task.isCancelled, let self else { return }
+            guard self.settings.autoAnswer, self.isListening, !self.answering,
+                  QuestionKind.looksLikeQuestion(self.pendingSpeech) else { return }
+            NSLog("OpenCluely auto-answer: firing")
+            self.answerFromHotkey()
+        }
     }
 
     /// Mirror the active mode into the overlay's mode menu.
@@ -246,9 +285,9 @@ final class AppCore: NSObject, NSApplicationDelegate {
     /// ⌘↩ from anywhere: answer using the current context (transcript if
     /// listening, else the last query, else a generic prompt).
     private func answerFromHotkey() {
-        if isListening && !transcript.recent.isEmpty {
+        if let heard = heardConversation() {
             ask("Answer the most recent question from the conversation.",
-                context: .text(transcript.recent))
+                context: .text(heard), label: "From meeting audio")
         } else if !model.query.isEmpty {
             ask(model.query, context: .none)
         }
@@ -288,6 +327,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
         // Stop listening if active, then archive + clear via the model.
         if isListening { audio.stop(); isListening = false }
         transcript.clear()
+        lastHeard = ""
         model.endSession()
     }
 
@@ -300,7 +340,10 @@ final class AppCore: NSObject, NSApplicationDelegate {
             model.listening = false
             // Commit the captured transcript as a session item, then clear the live line.
             let captured = transcript.recent.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !captured.isEmpty { model.addTranscript(captured) }
+            if !captured.isEmpty {
+                model.addTranscript(captured)
+                lastHeard = captured
+            }
             transcript.clear()
             model.liveTranscript = ""
             model.status = "Stopped listening."
@@ -311,6 +354,7 @@ final class AppCore: NSObject, NSApplicationDelegate {
         // transcribed phrases arrive via the onText callback set in makeTranscriber().
         let transcriber = makeTranscriber()
         transcript.clear()
+        lastHeard = ""
         model.liveTranscript = ""
         model.collapsed = false
         model.showHistory = false
@@ -420,16 +464,27 @@ final class AppCore: NSObject, NSApplicationDelegate {
 
     /// When listening, use the recent transcript as context; otherwise ask plainly.
     private func askUsingCurrentContext(_ q: String) {
-        let context: AnswerContext = isListening && !transcript.recent.isEmpty
-            ? .text(transcript.recent)
-            : .none
-        ask(q, context: context, typed: true)
+        if let heard = heardConversation() {
+            ask(q, context: .text(heard), label: "From meeting audio", typed: true)
+        } else {
+            ask(q, context: .none, typed: true)
+        }
+    }
+
+    /// The live transcript while listening, else what the last Listen captured.
+    private func heardConversation() -> String? {
+        if isListening && !transcript.recent.isEmpty { return transcript.recent }
+        return lastHeard.isEmpty ? nil : lastHeard
     }
 
     /// `typed` is true when the user wrote the question; fixed button prompts
     /// ("Answer the question on my screen") leave the question type to the context.
     private func ask(_ q: String, context: AnswerContext, label: String? = nil, typed: Bool = false) {
         model.startSessionIfNeeded()
+        // Whatever was heard so far is covered by this answer.
+        pendingSpeech = ""
+        autoAnswerTask?.cancel()
+        answering = true
         model.query = q
         model.answer = ""
         model.status = "Thinking…"
@@ -487,10 +542,17 @@ final class AppCore: NSObject, NSApplicationDelegate {
             } catch LLMError.http(let code) {
                 NSLog("OpenCluely ask: LLMError.http(%d)", code)
                 model.status = "Ollama error (HTTP \(code))."
+            } catch let error as URLError where error.code == .timedOut {
+                // Never log the full URLError: its description includes the
+                // request URL, and Gemini's URL carries the API key.
+                NSLog("OpenCluely ask: timed out")
+                model.status = "\(settings.provider.displayName) didn't respond in time — it's probably overloaded. Try again or pick another model in Settings."
             } catch {
-                NSLog("OpenCluely ask: error %@", String(describing: error))
+                NSLog("OpenCluely ask: error %@", error.localizedDescription)
                 model.status = "Error: \(error.localizedDescription)"
             }
+            answering = false
+            if !pendingSpeech.isEmpty { scheduleAutoAnswer() }
         }
     }
 }

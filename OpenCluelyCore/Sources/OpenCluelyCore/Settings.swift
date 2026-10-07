@@ -89,6 +89,12 @@ public final class Settings {
         set { store.setString(newValue, forKey: "starStories") }
     }
 
+    /// Answer automatically when a question is heard while listening.
+    public var autoAnswer: Bool {
+        get { store.string(forKey: "autoAnswer") == "true" }
+        set { store.setString(newValue ? "true" : "false", forKey: "autoAnswer") }
+    }
+
     /// The language generated code is written in unless a question asks for another.
     public var codeLanguage: String {
         get { store.string(forKey: "codeLanguage") ?? "Python" }
